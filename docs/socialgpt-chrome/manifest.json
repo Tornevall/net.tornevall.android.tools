@@ -1,0 +1,68 @@
+{
+  "name": "Tornevall Networks Social Media Tools",
+  "short_name": "tornevall-networks-social-media-tools",
+  "description": "Browser-wide AI assistant, fact-checker and toolkit. Powered by Tornevall Networks Tools.",
+  "version": "1.2.16",
+  "manifest_version": 3,
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "all_frames": true,
+      "match_about_blank": true,
+      "js": [
+        "js/shared/i18n.js",
+        "js/shared/platform-registry.js",
+        "js/shared/facebook-admin-reporter.js",
+        "js/shared/soundcloud-page-bridge.js",
+        "js/platforms/facebook.js",
+        "js/platforms/soundcloud.js",
+        "js/platforms/x.js",
+        "js/content-script.js"
+      ],
+      "css": [
+        "css/styles.css"
+      ]
+    }
+  ],
+  "background": {
+    "service_worker": "js/background.js"
+  },
+  "action": {
+    "default_popup": "html/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "options_page": "html/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*.png",
+        "icons/*.svg",
+        "js/injected/network-monitor.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

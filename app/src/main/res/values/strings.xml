@@ -1,0 +1,147 @@
+<resources>
+    <string name="app_name">Tornevall Networks Tools for Android</string>
+    <string name="navigation_drawer_open">Open navigation drawer</string>
+    <string name="navigation_drawer_close">Close navigation drawer</string>
+    <string name="nav_header_title">Android Studio</string>
+    <string name="nav_header_subtitle">android.studio@android.com</string>
+    <string name="nav_header_desc">Navigation header</string>
+    <string name="action_settings">Settings</string>
+
+    <string name="menu_transform">Capture</string>
+    <string name="menu_reflow">Import</string>
+    <string name="menu_slideshow">Slideshow</string>
+    <string name="menu_socialgpt">Reply</string>
+    <string name="menu_settings">Settings</string>
+
+    <string name="socialgpt_title">Reply helper</string>
+    <string name="socialgpt_open_settings">Open settings</string>
+    <string name="socialgpt_start_bubble">Start bubble launcher</string>
+    <string name="socialgpt_bubble_started">Bubble launcher started. Open another app and tap the bubble.</string>
+    <string name="socialgpt_context_label">Original post or selected text</string>
+    <string name="socialgpt_context_hint">Paste text you want help answering.</string>
+    <string name="socialgpt_prompt_label">Your instruction</string>
+    <string name="socialgpt_prompt_hint">Used for Generate. Verify uses automatic fact-check instruction.</string>
+    <string name="socialgpt_default_instruction">Keep it factual and friendly.</string>
+    <string name="socialgpt_model_label">Model</string>
+    <string name="socialgpt_language_label">Response language</string>
+    <string name="socialgpt_generate">Generate reply suggestions</string>
+    <string name="socialgpt_verify_fact">Verify fact</string>
+    <string name="socialgpt_read_aloud">Read aloud response</string>
+    <string name="socialgpt_enable_screenreader">Enable speech playback after generation</string>
+    <string name="socialgpt_response_label">Response from Tools</string>
+    <string name="socialgpt_response_placeholder">The response from tools.tornevall.net will appear here.</string>
+    <string name="socialgpt_prompt_required">Add an instruction before sending the request.</string>
+    <string name="socialgpt_context_required">Add the original post or selected text before sending the request.</string>
+    <string name="socialgpt_token_required">Save your Tools bearer token in Settings before using Reply helper.</string>
+    <string name="socialgpt_response_updated">Response updated.</string>
+    <string name="socialgpt_loading">Contacting tools.tornevall.net…</string>
+    <string name="socialgpt_shared_text_imported">Shared text imported into context.</string>
+    <string name="socialgpt_clipboard_imported">Clipboard text imported into context.</string>
+    <string name="socialgpt_mode_reply">Mode: reply</string>
+    <string name="socialgpt_mode_verify">Mode: verify</string>
+    <string name="socialgpt_mood_label">Mood</string>
+    <string name="socialgpt_suggestions_label">Reply suggestions</string>
+    <string name="socialgpt_modify_label">Modify selected suggestion</string>
+    <string name="socialgpt_modify_hint">Example: make it shorter and more formal.</string>
+    <string name="socialgpt_apply_modify">Apply modify</string>
+    <string name="socialgpt_verify_box_title">Verify fact result</string>
+    <string name="socialgpt_verify_box_placeholder">Fact-check output will appear here.</string>
+    <string name="socialgpt_no_suggestion_selected">Generate reply suggestions before using modify.</string>
+    <string name="socialgpt_request_failed">The request to tools.tornevall.net failed.</string>
+    <string name="socialgpt_request_forbidden">Token rejected or OpenAI access is missing for this token.</string>
+    <string name="socialgpt_request_unauthorized">Authentication failed. Check your saved Tools bearer token.</string>
+    <string name="socialgpt_request_empty">Tools returned an empty response.</string>
+
+    <!-- Settings sections -->
+    <string name="settings_section_connection">Connection</string>
+    <string name="settings_tab_connection">Connection</string>
+    <string name="settings_tab_socialgpt">SocialGPT</string>
+    <string name="settings_tab_capture">Capture</string>
+    <string name="settings_dev_mode">Use dev/beta server (tools.tornevall.com)</string>
+    <string name="settings_section_language">Language &amp; Model</string>
+    <string name="settings_answer_language_label">Answer language</string>
+    <string name="settings_verify_language_label">Verify-fact language</string>
+    <string name="settings_reply_model_label">Reply model</string>
+    <string name="settings_reply_mood_label">Reply mood</string>
+    <string name="settings_verify_model_label">Fact-check model</string>
+    <string name="settings_verify_model_hint">Used by Verify fact. Retries with gpt-4o if empty result.</string>
+    <string name="settings_section_quick_reply">Quick reply</string>
+    <string name="settings_quick_reply_preset_label">Default quick-reply style</string>
+    <string name="settings_quick_reply_instruction_label">Extra quick-reply instruction (optional)</string>
+    <string name="settings_quick_reply_instruction_hint">Example: Keep it kind, short, and suitable for public replies.</string>
+    <string name="settings_section_profile">Persona profile (stored in Tools)</string>
+    <string name="settings_persona_profile_label">Persona profile</string>
+    <string name="settings_persona_profile_hint">You are a friendly and helpful person…</string>
+    <string name="settings_load_from_tools">Load from Tools</string>
+    <string name="settings_save_to_tools">Save to Tools</string>
+    <string name="settings_test_connection">Test Tools → OpenAI</string>
+    <string name="settings_test_result_placeholder">Run a test to check the connection.</string>
+    <string name="settings_loaded_ok">Settings loaded from Tools.</string>
+    <string name="settings_saved_ok">Settings saved to Tools.</string>
+    <string name="settings_save_error">Could not save settings to Tools.</string>
+    <string name="settings_load_error">Could not load settings from Tools.</string>
+    <string name="settings_test_ok">Connection OK.</string>
+    <string name="settings_test_error">Connection test failed.</string>
+    <string name="settings_section_capture">Screen capture / Accessibility</string>
+    <string name="settings_accessibility_desc">Enable the Accessibility Service to capture visible text from any app and send it to the Reply helper without copy/paste.</string>
+    <string name="settings_accessibility_howto">When Facebook (or another app) is on top: tap the Android Accessibility shortcut button, the Tools bubble, or Capture in the persistent notification to open Reply helper with captured text. Copy/paste still works as fallback.</string>
+    <string name="settings_open_accessibility">Open Accessibility Settings</string>
+    <string name="settings_accessibility_active">✓ Accessibility service is active.</string>
+    <string name="settings_accessibility_inactive">Accessibility service is not enabled.</string>
+    <string name="settings_notifications_required">Allow notifications to use on-top Capture action.</string>
+    <string name="settings_overlay_permission_missing">Overlay permission is not granted.</string>
+    <string name="settings_overlay_permission_granted">✓ Overlay permission granted.</string>
+    <string name="settings_open_overlay_permission">Grant overlay permission</string>
+    <string name="settings_start_bubble">Start bubble launcher</string>
+    <string name="settings_stop_bubble">Stop bubble launcher</string>
+    <string name="settings_bubble_size_label">Bubble size</string>
+    <string name="settings_bubble_running">✓ Bubble launcher is running.</string>
+    <string name="settings_bubble_stopped">Bubble launcher is stopped.</string>
+    <string name="settings_enable_accessibility_first">Enable Accessibility Service first to capture text from other apps.</string>
+    <string name="bubble_notification_title">Tornevall Tools bubble active</string>
+    <string name="bubble_notification_text">Tap bubble on screen to capture current visible text.</string>
+    <string name="bubble_notification_stop">Stop bubble</string>
+    <string name="bubble_panel_capture_visible">Capture visible screen now</string>
+    <string name="bubble_panel_capture_focused">Capture selected element</string>
+    <string name="bubble_panel_capture_scroll">Capture while scrolling</string>
+    <string name="bubble_panel_verify_fact">Verify fact from captured screen</string>
+    <string name="bubble_panel_verify_focused">Verify fact from selected element</string>
+    <string name="bubble_panel_open_reply">Open reply helper</string>
+    <string name="bubble_panel_minimize">Minimize launcher</string>
+    <string name="bubble_panel_stop">Stop bubble</string>
+    <string name="accessibility_service_description">Reads visible screen text and sends it to the reply helper when you tap \'Capture\'.</string>
+    <string name="capture_notification_title">Tornevall Tools – ready to capture</string>
+    <string name="capture_notification_text">Tap \'Capture\' to send current screen text to Reply helper.</string>
+    <string name="capture_notification_action">Capture</string>
+    <string name="capture_empty_hint">No readable text found on this screen. App opened so you can paste or try another view.</string>
+    <string name="capture_scroll_done_hint">Scroll capture completed. Combined text sent to Reply helper.</string>
+    <string name="capture_focused_done_hint">Selected element captured and sent to Reply helper.</string>
+    <string name="settings_accessibility_shortcut_toggle">Enable bottom-right accessibility shortcut button</string>
+    <string name="settings_bankid_limit_hint">BankID can still block while any Accessibility service is enabled. We pause bubble/capture on BankID screens, but you may still need to temporarily disable Accessibility in system settings.</string>
+
+    <string name="settings_tools_token_title">Tools API token</string>
+    <string name="settings_tools_token_label">Tools bearer token</string>
+    <string name="settings_tools_token_hint">Paste token from tools.tornevall.com</string>
+    <string name="settings_tools_token_save">Save token</string>
+    <string name="settings_tools_token_clear">Clear token</string>
+    <string name="settings_tools_token_validate">Validate token</string>
+    <string name="settings_tools_token_saved">Token saved.</string>
+    <string name="settings_tools_token_cleared">Token removed.</string>
+    <string name="settings_tools_token_empty">Add a token before saving.</string>
+    <string name="settings_tools_token_present">A token is currently saved.</string>
+    <string name="settings_tools_token_missing">No token saved yet.</string>
+    <string name="settings_tools_token_valid">Token looks valid.</string>
+    <string name="settings_tools_token_invalid">Token validation failed.</string>
+
+    <string name="lorem_ipsum_title">Lorem Ipsum"</string>
+    <string name="lorem_ipsum">Lorem Ipsum is simply placeholder text of the printing and
+        typesetting industry. Lorem Ipsum has been the industry\'s standard placeholder text ever
+        since the 1500s, when an unknown printer took a galley of type and scrambled it to make a
+        type specimen book"
+    </string>
+    <string name="fab_content_description">Represents a view to invoke an action</string>
+    <string name="image_view_item_transform_content_description">Represents an image view in the
+        item
+    </string>
+    <string name="socialgpt_web_search_used">🔍 Web search</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/capture_visible"
+        android:title="Capture visible screen" />
+    <item
+        android:id="@+id/capture_focused"
+        android:title="Capture selected element" />
+    <item
+        android:id="@+id/capture_scroll"
+        android:title="Capture while scrolling" />
+</menu>
+
