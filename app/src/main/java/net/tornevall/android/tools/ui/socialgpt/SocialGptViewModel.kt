@@ -243,6 +243,45 @@ class SocialGptViewModel : ViewModel() {
         }
     }
 
+    fun askVerifyFollowUp(
+        token: String,
+        baseUrl: String,
+        contextText: String,
+        model: String,
+        language: String,
+        mood: String,
+        followUpQuestion: String
+    ) {
+        val question = followUpQuestion.trim()
+        if (question.isBlank()) {
+            val current = _uiState.value ?: SocialGptUiState()
+            _uiState.value = current.copy(validationError = "followup_required")
+            return
+        }
+
+        val previousFact = _uiState.value?.factCheckText?.trim().orEmpty()
+        val mergedContext = buildString {
+            append(contextText.trim())
+            if (previousFact.isNotBlank()) {
+                append("\n\nPrevious verification:\n")
+                append(previousFact)
+            }
+        }
+        val followUpPrompt = "Follow-up question: $question\n" +
+            "Answer as a continuation of the verification with clear evidence status."
+
+        generateDraft(
+            token = token,
+            baseUrl = baseUrl,
+            contextText = mergedContext,
+            promptText = followUpPrompt,
+            model = model,
+            language = language,
+            mood = mood,
+            requestMode = SocialGptRequestMode.VERIFY
+        )
+    }
+
     private fun parseSuggestions(raw: String): List<String> {
         val numbered = Regex("""^\\s*\\d+[.):-]?\\s+(.+)$""")
         val parsed = raw.lines()

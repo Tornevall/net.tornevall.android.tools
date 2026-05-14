@@ -24,6 +24,7 @@ import net.tornevall.android.tools.accessibility.ToolsReaderAccessibilityService
 import net.tornevall.android.tools.data.settings.ToolsTokenStore
 import net.tornevall.android.tools.databinding.FragmentSocialgptBinding
 import net.tornevall.android.tools.overlay.ToolsBubbleService
+import java.net.URI
 import java.util.Locale
 
 class SocialGptFragment : Fragment() {
@@ -108,6 +109,18 @@ class SocialGptFragment : Fragment() {
             )
         }
 
+        binding.buttonVerifyFollowup.setOnClickListener {
+            viewModel.askVerifyFollowUp(
+                token = tokenStore.getToken().orEmpty(),
+                baseUrl = tokenStore.getBaseUrl(),
+                contextText = binding.inputContext.text?.toString().orEmpty(),
+                model = tokenStore.getVerifyModel().ifBlank { "gpt-5.4" },
+                language = tokenStore.getVerifyLanguage().ifBlank { "auto" },
+                mood = tokenStore.getReplyMood().ifBlank { "balanced" },
+                followUpQuestion = binding.inputVerifyFollowup.text?.toString().orEmpty()
+            )
+        }
+
         binding.buttonApplyModify.setOnClickListener {
             viewModel.applyModify(
                 token = tokenStore.getToken().orEmpty(),
@@ -129,6 +142,7 @@ class SocialGptFragment : Fragment() {
             binding.buttonVerifyFact.isEnabled = !state.isLoading
             binding.buttonApplyModify.isEnabled = !state.isLoading
             binding.buttonReadAloud.isEnabled = hasResponse && !state.isLoading
+            binding.buttonVerifyFollowup.isEnabled = !state.isLoading
             binding.progressGenerating.isVisible = state.isGenerating
             binding.progressVerifying.isVisible = state.isVerifying
             binding.chipWebSearchIndicator.isVisible = state.webSearchUsed
@@ -154,6 +168,7 @@ class SocialGptFragment : Fragment() {
                     "unauthorized" -> getString(R.string.socialgpt_request_unauthorized)
                     "forbidden" -> getString(R.string.socialgpt_request_forbidden)
                     "empty_response" -> getString(R.string.socialgpt_request_empty)
+                    "followup_required" -> getString(R.string.socialgpt_followup_required)
                     "no_suggestion_selected" -> getString(R.string.socialgpt_no_suggestion_selected)
                     "request_failed" -> getString(R.string.socialgpt_request_failed)
                     else -> getString(R.string.socialgpt_prompt_required)
@@ -179,6 +194,9 @@ class SocialGptFragment : Fragment() {
                 getString(R.string.socialgpt_loading)
             }
             binding.textVerifyFactBody.movementMethod = LinkMovementMethod.getInstance()
+            if (!state.isLoading && state.lastMode == SocialGptRequestMode.VERIFY && state.factCheckText.isNotBlank()) {
+                binding.inputVerifyFollowup.text?.clear()
+            }
 
             if (hasResponse) {
                 announceForScreenReader(getString(R.string.socialgpt_response_updated))
@@ -252,13 +270,14 @@ class SocialGptFragment : Fragment() {
         escaped = escaped.replace(Regex("""\[([^\]]+)\]\(([^)]+)\)""")) { match ->
             val text = match.groupValues[1]
             val url = match.groupValues[2]
-            "<a href=\"$url\">$text</a>"
+            val label = text.ifBlank { toReadableLinkLabel(url) }
+            "<a href=\"$url\">${TextUtils.htmlEncode(label)}</a>"
         }
 
         // Handle plain URLs (http/https)
-        escaped = escaped.replace(Regex("""(?:https?://[^\s\)]+)""")) { match ->
+        escaped = escaped.replace(Regex("""https?://[^\s<>"]+""")) { match ->
             val url = match.value
-            "<a href=\"$url\">$url</a>"
+            "<a href=\"$url\">${TextUtils.htmlEncode(toReadableLinkLabel(url))}</a>"
         }
 
         // Handle markdown headers
@@ -279,6 +298,16 @@ class SocialGptFragment : Fragment() {
         val html = escaped.replace("\n", "<br/>")
 
         return HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_LEGACY)
+    }
+
+    private fun toReadableLinkLabel(rawUrl: String): String {
+        return runCatching {
+            val uri = URI(rawUrl)
+            val host = uri.host?.removePrefix("www.") ?: return@runCatching rawUrl
+            val path = uri.path.orEmpty().trimEnd('/')
+            val shortPath = if (path.isBlank()) "" else path.take(28)
+            if (shortPath.isBlank()) host else "$host$shortPath"
+        }.getOrDefault(rawUrl)
     }
 
     private fun importClipboardTextIfAvailable() {

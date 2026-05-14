@@ -46,6 +46,10 @@
     <string name="socialgpt_apply_modify">Apply modify</string>
     <string name="socialgpt_verify_box_title">Verify fact result</string>
     <string name="socialgpt_verify_box_placeholder">Fact-check output will appear here.</string>
+    <string name="socialgpt_additional_questions">Additional questions</string>
+    <string name="socialgpt_followup_hint">Ask a follow-up about this fact-check.</string>
+    <string name="socialgpt_ask_followup">Ask follow-up</string>
+    <string name="socialgpt_followup_required">Write a follow-up question first.</string>
     <string name="socialgpt_no_suggestion_selected">Generate reply suggestions before using modify.</string>
     <string name="socialgpt_request_failed">The request to tools.tornevall.net failed.</string>
     <string name="socialgpt_request_forbidden">Token rejected or OpenAI access is missing for this token.</string>
