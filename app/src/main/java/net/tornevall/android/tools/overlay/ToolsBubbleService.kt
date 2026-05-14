@@ -298,16 +298,19 @@ class ToolsBubbleService : Service() {
         popup.setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
                 R.id.capture_visible -> {
+                    popup.dismiss()
                     hidePanel()
                     dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = false, autoVerify = false)
                     true
                 }
                 R.id.capture_focused -> {
+                    popup.dismiss()
                     hidePanel()
                     dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = true, autoVerify = false)
                     true
                 }
                 R.id.capture_scroll -> {
+                    popup.dismiss()
                     hidePanel()
                     dispatchCaptureWithDelay(scrollCapture = true, focusedCapture = false, autoVerify = false)
                     true
@@ -324,11 +327,13 @@ class ToolsBubbleService : Service() {
         popup.setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
                 R.id.verify_visible -> {
+                    popup.dismiss()
                     hidePanel()
                     dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = false, autoVerify = true)
                     true
                 }
                 R.id.verify_focused -> {
+                    popup.dismiss()
                     hidePanel()
                     dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = true, autoVerify = true)
                     true
@@ -491,7 +496,7 @@ class ToolsBubbleService : Service() {
         private const val CHANNEL_ID = "tools_bubble"
         private const val NOTIFICATION_ID = 1002
         private const val ACTION_STOP = "net.tornevall.android.tools.ACTION_STOP_BUBBLE"
-        private const val CAPTURE_DISPATCH_DELAY_MS = 260L
+        private const val CAPTURE_DISPATCH_DELAY_MS = 520L
 
         @Volatile
         var isRunning: Boolean = false

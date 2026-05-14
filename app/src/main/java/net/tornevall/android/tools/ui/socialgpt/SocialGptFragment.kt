@@ -207,8 +207,8 @@ class SocialGptFragment : Fragment() {
         val sharedText = arguments?.getString(ARG_SHARED_TEXT)?.trim().orEmpty()
         val cachedCapture = tokenStore.consumeLastCapturedContext(maxAgeMs = 180_000L)
         val importedText = when {
-            cachedCapture?.text?.isNotBlank() == true -> cachedCapture.text
-            sharedText.isNotBlank() -> sharedText
+            cachedCapture?.text?.isNotBlank() == true -> sanitizeImportedContext(cachedCapture.text)
+            sharedText.isNotBlank() -> sanitizeImportedContext(sharedText)
             else -> ""
         }
         if (importedText.isNotBlank()) {
@@ -290,16 +290,18 @@ class SocialGptFragment : Fragment() {
         val text = clipData.getItemAt(0).coerceToText(requireContext())?.toString()?.trim().orEmpty()
         if (text.isBlank()) return
         if (isLikelyOverlayMenuText(text)) return
+        val sanitizedText = sanitizeImportedContext(text)
+        if (sanitizedText.isBlank()) return
         if (text == lastImportedClipboardText) return
 
         val currentText = binding.inputContext.text?.toString()?.trim().orEmpty()
-        if (currentText == text) {
-            lastImportedClipboardText = text
+        if (currentText == sanitizedText) {
+            lastImportedClipboardText = sanitizedText
             return
         }
 
-        binding.inputContext.setText(text)
-        lastImportedClipboardText = text
+        binding.inputContext.setText(sanitizedText)
+        lastImportedClipboardText = sanitizedText
         announceForScreenReader(getString(R.string.socialgpt_clipboard_imported))
     }
 
@@ -308,8 +310,35 @@ class SocialGptFragment : Fragment() {
         if (normalized.length > 260) return false
         return normalized.contains("capture from visible screen") ||
             normalized.contains("capture from selected element") ||
+            normalized.contains("capture while scrolling") ||
             normalized.contains("verify from visible screen") ||
             normalized.contains("verify from selected element")
+    }
+
+    private fun sanitizeImportedContext(raw: String): String {
+        if (raw.isBlank()) return ""
+        return raw
+            .replace("\r", "\n")
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .filterNot { line ->
+                val normalized = line.lowercase()
+                normalized == "capture" ||
+                    normalized == "verify" ||
+                    normalized == "tasks" ||
+                    normalized == "capture visible screen" ||
+                    normalized == "capture selected element" ||
+                    normalized == "capture while scrolling" ||
+                    normalized == "verify from visible screen" ||
+                    normalized == "verify from selected element" ||
+                    normalized == "open settings" ||
+                    normalized == "start bubble launcher" ||
+                    normalized == "original post or selected text"
+            }
+            .distinct()
+            .joinToString("\n")
+            .trim()
     }
 
     private fun loadComposerState() {

@@ -116,8 +116,15 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
     private fun isProtectedPackage(packageName: String): Boolean {
         if (packageName.isBlank()) return false
         val normalized = packageName.lowercase()
-        val protectedApps = tokenStore.getProtectedApps()
-        return protectedApps.any { normalized.startsWith(it) }
+        val protectedApps = tokenStore.getProtectedApps().map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        val listMatch = protectedApps.any { candidate ->
+            normalized.startsWith(candidate) ||
+                (candidate.length >= 4 && normalized.contains(candidate.replace(" ", "")))
+        }
+        if (listMatch) return true
+
+        // Safety fallback for common banking package families even if user list is malformed.
+        return normalized.contains("bankid") || normalized.contains("swedbank")
     }
 
     private fun disableAccessibilityService() {
@@ -308,11 +315,12 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
             scrollCapture -> "scroll"
             else -> "visible"
         }
-        val capturedText = captureBestEffortText(
+        val captureResult = captureBestEffortCapture(
             scrollCapture = scrollCapture,
             focusedCapture = focusedCapture
         )
-        val sourcePackage = rootInActiveWindow?.packageName?.toString().orEmpty()
+        val capturedText = captureResult.text
+        val sourcePackage = captureResult.sourcePackage
         if (::tokenStore.isInitialized && capturedText.isNotBlank()) {
             tokenStore.saveLastCapturedContext(
                 text = capturedText,
@@ -344,22 +352,24 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun captureBestEffortText(scrollCapture: Boolean, focusedCapture: Boolean): String {
+    private fun captureBestEffortCapture(scrollCapture: Boolean, focusedCapture: Boolean): CaptureResult {
         // Give popup overlays a brief moment to close before reading the active window.
         SystemClock.sleep(CAPTURE_INITIAL_DELAY_MS)
 
         var best = ""
+        var bestSourcePackage = ""
         for (attempt in 0 until CAPTURE_RETRY_ATTEMPTS) {
             val raw = captureCurrentWindowText(
                 scrollCapture = scrollCapture,
                 focusedCapture = focusedCapture
             )
             val sanitized = sanitizeCapturedText(raw)
+            val sourcePackage = rootInActiveWindow?.packageName?.toString().orEmpty()
             if (sanitized.isNotBlank()) {
                 best = sanitized
+                bestSourcePackage = sourcePackage
             }
 
-            val sourcePackage = rootInActiveWindow?.packageName?.toString().orEmpty()
             val shouldRetry = sourcePackage.equals(packageName, ignoreCase = true) ||
                 isLikelyOverlayMenuCapture(sanitized)
             if (!shouldRetry) {
@@ -369,7 +379,29 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
                 SystemClock.sleep(CAPTURE_RETRY_DELAY_MS)
             }
         }
-        return best
+
+        // Final rescue pass: if capture still points at our own package, wait longer and retry.
+        if (bestSourcePackage.equals(packageName, ignoreCase = true) || isLikelyOwnAppUiCapture(best)) {
+            SystemClock.sleep(CAPTURE_NON_SELF_RETRY_DELAY_MS)
+            repeat(CAPTURE_NON_SELF_RETRY_ATTEMPTS) {
+                val sourcePackage = rootInActiveWindow?.packageName?.toString().orEmpty()
+                val rescueText = sanitizeCapturedText(
+                    captureCurrentWindowText(scrollCapture = scrollCapture, focusedCapture = focusedCapture)
+                )
+                if (rescueText.isNotBlank()) {
+                    best = rescueText
+                    bestSourcePackage = sourcePackage
+                }
+                if (!sourcePackage.equals(packageName, ignoreCase = true) &&
+                    !isLikelyOverlayMenuCapture(rescueText)
+                ) {
+                    return CaptureResult(text = rescueText, sourcePackage = sourcePackage)
+                }
+                SystemClock.sleep(CAPTURE_RETRY_DELAY_MS)
+            }
+        }
+
+        return CaptureResult(text = best, sourcePackage = bestSourcePackage)
     }
 
     private fun sanitizeCapturedText(raw: String): String {
@@ -380,9 +412,22 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .filterNot { it == "Tools" }
+            .filterNot { isOverlayMenuLine(it) }
             .distinct()
             .joinToString("\n")
             .trim()
+    }
+
+    private fun isOverlayMenuLine(line: String): Boolean {
+        val normalized = line.lowercase()
+        return normalized == "capture" ||
+            normalized == "verify" ||
+            normalized == "tasks" ||
+            normalized == "capture visible screen" ||
+            normalized == "capture selected element" ||
+            normalized == "capture while scrolling" ||
+            normalized == "verify from visible screen" ||
+            normalized == "verify from selected element"
     }
 
     private fun isLikelyOverlayMenuCapture(text: String): Boolean {
@@ -392,10 +437,22 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
         val overlayMarkers = listOf(
             "capture from visible screen",
             "capture from selected element",
+            "capture while scrolling",
             "verify from visible screen",
-            "verify from selected element"
+            "verify from selected element",
+            "open settings",
+            "start bubble launcher",
+            "original post or selected text"
         )
         return overlayMarkers.any { normalized.contains(it) }
+    }
+
+    private fun isLikelyOwnAppUiCapture(text: String): Boolean {
+        if (text.isBlank()) return false
+        val normalized = text.lowercase()
+        return normalized.contains("start bubble launcher") ||
+            normalized.contains("open settings") ||
+            normalized.contains("original post or selected text")
     }
 
     private fun showBankIdBlockingNotification() {
@@ -455,13 +512,20 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
         const val EXTRA_AUTO_VERIFY = "net.tornevall.android.tools.EXTRA_AUTO_VERIFY"
         private const val MAX_SCROLL_STEPS = 4
         private const val SCROLL_SETTLE_MS = 260L
-        private const val CAPTURE_INITIAL_DELAY_MS = 140L
-        private const val CAPTURE_RETRY_DELAY_MS = 120L
-        private const val CAPTURE_RETRY_ATTEMPTS = 4
+        private const val CAPTURE_INITIAL_DELAY_MS = 220L
+        private const val CAPTURE_RETRY_DELAY_MS = 220L
+        private const val CAPTURE_RETRY_ATTEMPTS = 6
+        private const val CAPTURE_NON_SELF_RETRY_DELAY_MS = 420L
+        private const val CAPTURE_NON_SELF_RETRY_ATTEMPTS = 3
         @Volatile
         private var isProtectedAppForeground: Boolean = false
         @Volatile
         private var activeService: ToolsReaderAccessibilityService? = null
+
+        private data class CaptureResult(
+            val text: String,
+            val sourcePackage: String
+        )
 
         fun requestCapture(
             scrollCapture: Boolean = false,
