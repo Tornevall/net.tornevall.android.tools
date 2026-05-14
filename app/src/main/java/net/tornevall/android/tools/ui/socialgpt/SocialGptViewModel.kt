@@ -87,7 +87,8 @@ class SocialGptViewModel : ViewModel() {
                 language = language,
                 requestMode = requestMode.apiValue,
                 modifier = if (requestMode == SocialGptRequestMode.VERIFY) "deep_fact_check" else mood,
-                reasoningEffort = if (requestMode == SocialGptRequestMode.VERIFY) "medium" else "medium"
+                reasoningEffort = if (requestMode == SocialGptRequestMode.VERIFY) "medium" else "medium",
+                fallbackUrl = getAlternateBaseUrl(baseUrl)
             )
 
             result.onSuccess { apiResult ->
@@ -202,7 +203,8 @@ class SocialGptViewModel : ViewModel() {
                 language = language,
                 requestMode = SocialGptRequestMode.REPLY.apiValue,
                 modifier = mood,
-                reasoningEffort = "medium"
+                reasoningEffort = "medium",
+                fallbackUrl = getAlternateBaseUrl(baseUrl)
             )
 
             result.onSuccess { apiResult ->
@@ -249,6 +251,16 @@ class SocialGptViewModel : ViewModel() {
             .mapNotNull { line -> numbered.find(line)?.groupValues?.getOrNull(1)?.trim() }
 
         return if (parsed.size >= 2) parsed.take(3) else emptyList()
+    }
+
+    private fun getAlternateBaseUrl(currentUrl: String): String {
+        return if (currentUrl.contains("tools.tornevall.com")) {
+            "https://tools.tornevall.net/api"
+        } else if (currentUrl.contains("tools.tornevall.net")) {
+            "https://tools.tornevall.com/api"
+        } else {
+            ""
+        }
     }
 
     companion object {

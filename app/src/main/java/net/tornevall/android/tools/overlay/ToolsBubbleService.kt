@@ -9,6 +9,8 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -43,6 +45,7 @@ class ToolsBubbleService : Service() {
     private var panelView: View? = null
     private lateinit var layoutParams: WindowManager.LayoutParams
     private lateinit var panelLayoutParams: WindowManager.LayoutParams
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     override fun onCreate() {
         super.onCreate()
@@ -162,10 +165,10 @@ class ToolsBubbleService : Service() {
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(6), dp(6), dp(6), dp(6))
             setBackgroundResource(R.drawable.bg_bubble_panel)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                elevation = 8f
+                elevation = 7f
             }
         }
 
@@ -174,13 +177,13 @@ class ToolsBubbleService : Service() {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(32)
+                dp(24)
             )
         }
 
         val titleView = TextView(this).apply {
             text = "Tools"
-            textSize = 14f
+            textSize = 12f
             setTextColor(ContextCompat.getColor(context, android.R.color.white))
             gravity = android.view.Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -191,51 +194,54 @@ class ToolsBubbleService : Service() {
         }
         headerPanel.addView(titleView)
 
-        // Capture dropdown button
-        val captureButton = createCompactPanelButton("📸 Capture") {
-            showCaptureMenu(panel)
+        val captureButton = createPanelActionButton("Capture")
+        captureButton.setOnClickListener {
+            showCaptureMenu(captureButton)
         }
 
-        // Verify dropdown button
-        val verifyButton = createCompactPanelButton("✓ Verify") {
-            showVerifyMenu(panel)
+        val verifyButton = createPanelActionButton("Verify")
+        verifyButton.setOnClickListener {
+            showVerifyMenu(verifyButton)
         }
 
-        // Open reply helper button
-        val openReplyButton = createCompactPanelButton("✎ Tasks") {
+        val openReplyButton = createPanelActionButton("Tasks")
+        openReplyButton.setOnClickListener {
             openReplyHelper()
             hidePanel()
         }
 
-        // Minimize button
-        val minimizeButton = createCompactPanelButton("−") {
+        val minimizeButton = createPanelUtilityButton("-")
+        minimizeButton.setOnClickListener {
             hidePanel()
         }
 
-        // Stop button
-        val stopButton = createCompactPanelButton("⊗") {
+        val stopButton = createPanelUtilityButton("x")
+        stopButton.setOnClickListener {
             stopSelf()
         }
 
-        // Add buttons row 1
         val buttonsRow1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                topMargin = dp(2)
+            }
         }
         buttonsRow1.addView(captureButton)
         buttonsRow1.addView(verifyButton)
         buttonsRow1.addView(openReplyButton)
 
-        // Add buttons row 2
         val buttonsRow2 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                topMargin = dp(3)
+            }
         }
         buttonsRow2.addView(minimizeButton)
         buttonsRow2.addView(stopButton)
@@ -245,7 +251,7 @@ class ToolsBubbleService : Service() {
         panel.addView(buttonsRow2)
 
         panelLayoutParams = WindowManager.LayoutParams(
-            dp(220),
+            dp(204),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
@@ -292,18 +298,18 @@ class ToolsBubbleService : Service() {
         popup.setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
                 R.id.capture_visible -> {
-                    dispatchCapture(scrollCapture = false, focusedCapture = false, autoVerify = false)
                     hidePanel()
+                    dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = false, autoVerify = false)
                     true
                 }
                 R.id.capture_focused -> {
-                    dispatchCapture(scrollCapture = false, focusedCapture = true, autoVerify = false)
                     hidePanel()
+                    dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = true, autoVerify = false)
                     true
                 }
                 R.id.capture_scroll -> {
-                    dispatchCapture(scrollCapture = true, focusedCapture = false, autoVerify = false)
                     hidePanel()
+                    dispatchCaptureWithDelay(scrollCapture = true, focusedCapture = false, autoVerify = false)
                     true
                 }
                 else -> false
@@ -318,13 +324,13 @@ class ToolsBubbleService : Service() {
         popup.setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
                 R.id.verify_visible -> {
-                    dispatchCapture(scrollCapture = false, focusedCapture = false, autoVerify = true)
                     hidePanel()
+                    dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = false, autoVerify = true)
                     true
                 }
                 R.id.verify_focused -> {
-                    dispatchCapture(scrollCapture = false, focusedCapture = true, autoVerify = true)
                     hidePanel()
+                    dispatchCaptureWithDelay(scrollCapture = false, focusedCapture = true, autoVerify = true)
                     true
                 }
                 else -> false
@@ -333,26 +339,45 @@ class ToolsBubbleService : Service() {
         popup.show()
     }
 
-    private fun createCompactPanelButton(label: String, onClick: () -> Unit): Button {
+    private fun createPanelActionButton(label: String): Button {
         return Button(this).apply {
             text = label
             isAllCaps = false
-            setPadding(dp(6), dp(4), dp(6), dp(4))
+            setPadding(dp(8), 0, dp(8), 0)
             minHeight = 0
             minimumHeight = 0
-            textSize = 11f
-            setTextColor(ContextCompat.getColor(context, android.R.color.white))
-            setBackgroundColor(ContextCompat.getColor(context, R.color.bubble_primary))
-            setOnClickListener { onClick() }
+            minWidth = 0
+            minimumWidth = 0
+            textSize = 10.5f
+            setTextColor(ContextCompat.getColor(context, R.color.bubble_primary_dark))
+            setBackgroundResource(R.drawable.bg_bubble_panel_button)
             val params = LinearLayout.LayoutParams(
                 0,
-                dp(32),
+                dp(28),
                 1f
             ).apply {
-                marginStart = dp(2)
-                marginEnd = dp(2)
+                marginStart = dp(1)
+                marginEnd = dp(1)
             }
             layoutParams = params
+        }
+    }
+
+    private fun createPanelUtilityButton(label: String): Button {
+        return Button(this).apply {
+            text = label
+            isAllCaps = false
+            setPadding(0, 0, 0, 0)
+            minHeight = 0
+            minimumHeight = 0
+            minWidth = 0
+            minimumWidth = 0
+            textSize = 10f
+            setTextColor(ContextCompat.getColor(context, R.color.bubble_primary_dark))
+            setBackgroundResource(R.drawable.bg_bubble_panel_button)
+            layoutParams = LinearLayout.LayoutParams(dp(50), dp(24)).apply {
+                marginStart = dp(3)
+            }
         }
     }
 
@@ -385,6 +410,13 @@ class ToolsBubbleService : Service() {
             }
             startActivity(intent)
         }
+    }
+
+    private fun dispatchCaptureWithDelay(scrollCapture: Boolean, focusedCapture: Boolean, autoVerify: Boolean) {
+        mainHandler.postDelayed(
+            { dispatchCapture(scrollCapture = scrollCapture, focusedCapture = focusedCapture, autoVerify = autoVerify) },
+            CAPTURE_DISPATCH_DELAY_MS
+        )
     }
 
     private fun openReplyHelper() {
@@ -459,6 +491,7 @@ class ToolsBubbleService : Service() {
         private const val CHANNEL_ID = "tools_bubble"
         private const val NOTIFICATION_ID = 1002
         private const val ACTION_STOP = "net.tornevall.android.tools.ACTION_STOP_BUBBLE"
+        private const val CAPTURE_DISPATCH_DELAY_MS = 260L
 
         @Volatile
         var isRunning: Boolean = false

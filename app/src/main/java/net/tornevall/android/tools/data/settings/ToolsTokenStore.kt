@@ -75,6 +75,80 @@ class ToolsTokenStore(context: Context) {
         prefs.edit().putString(KEY_BUBBLE_SIZE, normalized).apply()
     }
 
+    // --- Protected Apps Configuration ---
+    fun getProtectedApps(): Set<String> =
+        prefs.getStringSet(KEY_PROTECTED_APPS, getDefaultProtectedApps()).orEmpty()
+
+    fun setProtectedApps(apps: Set<String>) {
+        prefs.edit().putStringSet(KEY_PROTECTED_APPS, apps).apply()
+    }
+
+    fun addProtectedApp(packageName: String) {
+        val current = getProtectedApps().toMutableSet()
+        current.add(packageName.trim().lowercase())
+        setProtectedApps(current)
+    }
+
+    fun removeProtectedApp(packageName: String) {
+        val current = getProtectedApps().toMutableSet()
+        current.remove(packageName.trim().lowercase())
+        setProtectedApps(current)
+    }
+
+    // --- Last captured context (short-lived cache) ---
+    fun saveLastCapturedContext(
+        text: String,
+        sourcePackage: String = "",
+        captureMode: String = "visible"
+    ) {
+        val normalizedText = text.trim()
+        if (normalizedText.isBlank()) return
+        prefs.edit()
+            .putString(KEY_LAST_CAPTURE_TEXT, normalizedText)
+            .putString(KEY_LAST_CAPTURE_SOURCE, sourcePackage.trim())
+            .putString(KEY_LAST_CAPTURE_MODE, captureMode.trim().ifBlank { "visible" })
+            .putLong(KEY_LAST_CAPTURE_AT, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun consumeLastCapturedContext(maxAgeMs: Long = 120_000L): CapturedContext? {
+        val text = prefs.getString(KEY_LAST_CAPTURE_TEXT, "").orEmpty().trim()
+        val capturedAt = prefs.getLong(KEY_LAST_CAPTURE_AT, 0L)
+        if (text.isBlank() || capturedAt <= 0L) {
+            clearLastCapturedContext()
+            return null
+        }
+        val ageMs = System.currentTimeMillis() - capturedAt
+        if (ageMs > maxAgeMs) {
+            clearLastCapturedContext()
+            return null
+        }
+
+        val payload = CapturedContext(
+            text = text,
+            sourcePackage = prefs.getString(KEY_LAST_CAPTURE_SOURCE, "").orEmpty(),
+            captureMode = prefs.getString(KEY_LAST_CAPTURE_MODE, "visible").orEmpty(),
+            capturedAtMs = capturedAt
+        )
+        clearLastCapturedContext()
+        return payload
+    }
+
+    private fun clearLastCapturedContext() {
+        prefs.edit()
+            .remove(KEY_LAST_CAPTURE_TEXT)
+            .remove(KEY_LAST_CAPTURE_SOURCE)
+            .remove(KEY_LAST_CAPTURE_MODE)
+            .remove(KEY_LAST_CAPTURE_AT)
+            .apply()
+    }
+
+    private fun getDefaultProtectedApps(): Set<String> = setOf(
+        "com.bankid",
+        "com.bankid.bus",
+        "com.bankid.id"
+    )
+
     companion object {
         private const val PREFS_NAME = "tools_settings"
         const val KEY_TOOLS_TOKEN = "tools_api_token"
@@ -91,9 +165,21 @@ class ToolsTokenStore(context: Context) {
         private const val KEY_SAVED_MOOD = "socialgpt_saved_mood"
         private const val KEY_ACCESSIBILITY_SHORTCUT_ENABLED = "accessibility_shortcut_enabled"
         private const val KEY_BUBBLE_SIZE = "bubble_size"
+        private const val KEY_PROTECTED_APPS = "protected_apps_list"
+        private const val KEY_LAST_CAPTURE_TEXT = "last_capture_text"
+        private const val KEY_LAST_CAPTURE_SOURCE = "last_capture_source"
+        private const val KEY_LAST_CAPTURE_MODE = "last_capture_mode"
+        private const val KEY_LAST_CAPTURE_AT = "last_capture_at"
 
         const val BASE_URL_PROD = "https://tools.tornevall.net/api"
         const val BASE_URL_DEV = "https://tools.tornevall.com/api"
     }
+
+    data class CapturedContext(
+        val text: String,
+        val sourcePackage: String,
+        val captureMode: String,
+        val capturedAtMs: Long
+    )
 }
 

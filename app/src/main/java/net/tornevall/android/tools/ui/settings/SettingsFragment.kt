@@ -74,13 +74,17 @@ class SettingsFragment : Fragment() {
         return binding.root
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        setupDropdowns(ToolsExtensionClient.DEFAULT_MODELS)
-        setupTabs()
-        loadLocalSettings()
-        wireListeners()
-    }
+     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+         super.onViewCreated(view, savedInstanceState)
+         setupDropdowns(ToolsExtensionClient.DEFAULT_MODELS)
+         setupTabs()
+         loadLocalSettings()
+         wireListeners()
+         // Auto-sync profile from Tools if token is present
+         if (!tokenStore.getToken().isNullOrBlank()) {
+             loadFromToolsAutomatic()
+         }
+     }
 
     override fun onResume() {
         super.onResume()
@@ -201,28 +205,32 @@ class SettingsFragment : Fragment() {
             toast(R.string.settings_tools_token_saved)
         }
 
-        binding.buttonValidateToolsToken.setOnClickListener {
-            val token = binding.inputToolsToken.text?.toString()?.trim().orEmpty()
-            if (token.isBlank()) { toast(R.string.settings_tools_token_empty); return@setOnClickListener }
-            binding.buttonValidateToolsToken.isEnabled = false
-            binding.textToolsTokenStatus.text = getString(R.string.socialgpt_loading)
-            val client = extensionClient()
-            thread {
-                val result = client.validateToken(token)
-                runOnUiSafe {
-                    binding.buttonValidateToolsToken.isEnabled = true
-                    result.onSuccess { v ->
-                        binding.textToolsTokenStatus.text = if (v.valid) {
-                            if (v.userName.isNotBlank()) "✓ " + v.message else getString(R.string.settings_tools_token_valid)
-                        } else {
-                            v.message.ifBlank { getString(R.string.settings_tools_token_invalid) }
-                        }
-                    }.onFailure { t ->
-                        binding.textToolsTokenStatus.text = httpErrorText(t)
-                    }
-                }
-            }
-        }
+         binding.buttonValidateToolsToken.setOnClickListener {
+             val token = binding.inputToolsToken.text?.toString()?.trim().orEmpty()
+             if (token.isBlank()) { toast(R.string.settings_tools_token_empty); return@setOnClickListener }
+             binding.buttonValidateToolsToken.isEnabled = false
+             binding.textToolsTokenStatus.text = getString(R.string.socialgpt_loading)
+             val client = extensionClient()
+             thread {
+                 val result = client.validateToken(token)
+                 runOnUiSafe {
+                     binding.buttonValidateToolsToken.isEnabled = true
+                     result.onSuccess { v ->
+                         binding.textToolsTokenStatus.text = if (v.valid) {
+                             if (v.userName.isNotBlank()) "✓ " + v.message else getString(R.string.settings_tools_token_valid)
+                         } else {
+                             v.message.ifBlank { getString(R.string.settings_tools_token_invalid) }
+                         }
+                         // Auto-sync profile after successful validation
+                         if (v.valid) {
+                             loadFromTools()
+                         }
+                     }.onFailure { t ->
+                         binding.textToolsTokenStatus.text = httpErrorText(t)
+                     }
+                 }
+             }
+         }
 
         binding.buttonClearToolsToken.setOnClickListener {
             tokenStore.clearToken()
@@ -306,23 +314,52 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    // ── Load from Tools API ──────────────────────────────────────────────────
+     // ── Load from Tools API ──────────────────────────────────────────────────
 
-    private fun loadFromTools() {
-        val token = tokenStore.getToken().orEmpty()
-        if (token.isBlank()) { toast(R.string.settings_tools_token_empty); return }
+     private fun loadFromToolsAutomatic() {
+         val token = tokenStore.getToken().orEmpty()
+         if (token.isBlank()) return
 
-        setSyncStatus(getString(R.string.socialgpt_loading))
-        val client = extensionClient()
+         val client = extensionClient()
+         thread {
+             val settingsResult = client.getSettingsWithFallback(token)
+             runOnUiSafe {
+                 settingsResult.onSuccess { s ->
+                     if (s.personaProfile.isNotBlank()) {
+                         binding.inputPersonaProfile.setText(s.personaProfile)
+                         tokenStore.setPersonaProfile(s.personaProfile)
+                     }
+                     if (s.responseLanguage.isNotBlank()) {
+                         binding.inputAnswerLanguage.setText(s.responseLanguage.ifBlank { "auto" }, false)
+                         tokenStore.setAnswerLanguage(s.responseLanguage.ifBlank { "auto" })
+                     }
+                     if (s.customInstruction.isNotBlank()) {
+                         binding.inputQuickReplyInstruction.setText(s.customInstruction)
+                         tokenStore.setQuickReplyInstruction(s.customInstruction)
+                         if (tokenStore.getSavedInstruction().isBlank()) {
+                             tokenStore.setSavedInstruction(s.customInstruction)
+                         }
+                     }
+                 }
+             }
+         }
+     }
 
-        thread {
-            // Models
-            val modelsResult = client.getModels(token)
-            val models = modelsResult.getOrNull() ?: ToolsExtensionClient.DEFAULT_MODELS
+     private fun loadFromTools() {
+         val token = tokenStore.getToken().orEmpty()
+         if (token.isBlank()) { toast(R.string.settings_tools_token_empty); return }
 
-            // Settings
-            val settingsResult = client.getSettings(token)
-            runOnUiSafe {
+         setSyncStatus(getString(R.string.socialgpt_loading))
+         val client = extensionClient()
+
+         thread {
+             // Models
+             val modelsResult = client.getModels(token)
+             val models = modelsResult.getOrNull() ?: ToolsExtensionClient.DEFAULT_MODELS
+
+             // Settings with fallback
+             val settingsResult = client.getSettingsWithFallback(token)
+             runOnUiSafe {
                 setupDropdowns(models)
                 settingsResult.onSuccess { s ->
                     binding.inputPersonaProfile.setText(s.personaProfile)
@@ -445,7 +482,15 @@ class SettingsFragment : Fragment() {
         binding.textSyncStatus.isVisible = true
     }
 
-    private fun extensionClient() = ToolsExtensionClient(tokenStore.getBaseUrl())
+     private fun extensionClient(): ToolsExtensionClient {
+         val baseUrl = tokenStore.getBaseUrl()
+         val fallbackUrl = if (tokenStore.isDevMode()) {
+             ToolsTokenStore.BASE_URL_PROD // If dev fails, try prod
+         } else {
+             ToolsTokenStore.BASE_URL_DEV  // If prod fails, try dev
+         }
+         return ToolsExtensionClient(baseUrl, fallbackUrl)
+     }
 
     private fun httpErrorText(t: Throwable): String =
         when ((t as? ToolsSocialGptException)?.statusCode) {

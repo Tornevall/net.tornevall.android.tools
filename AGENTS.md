@@ -5,6 +5,11 @@ This guide describes the API surface in `tools.tornevall.com` for Android integr
 
 Current Android repo status (2026-04-22): the app now includes functional SocialGPT/mobile flows (token validation, settings sync subset, reply suggestions with modify, verify fact, accessibility capture, and styled bubble overlay) and uses direct `HttpURLConnection` clients. It still does not use Retrofit/OkHttp service layers.
 
+## Local agent workflow policy (project-specific)
+
+- **Commit + push after completed code/docs changes**: when a task is finished and verified, agents should create a commit and push it to the active remote branch.
+- **No version tags unless explicitly requested**: agents must not create or push Git tags automatically. Tagging is only allowed when the user explicitly asks for it in that session.
+
 ## Change sync (2026-05-14)
 
 - **SocialGPT verify/fact-check model choice is now Tools-controlled instead of extension-controlled** – `POST /api/ai/socialgpt/respond` keeps the same endpoint shape, but newer browser/native clients should no longer assume that the local app/extension chooses the verification model for `request_mode="verify"`.

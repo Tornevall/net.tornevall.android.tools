@@ -22,8 +22,29 @@ data class ToolsExtensionSettings(
 )
 
 class ToolsExtensionClient(
-    private val baseUrl: String = ToolsTokenStore.BASE_URL_PROD
+    private val baseUrl: String = ToolsTokenStore.BASE_URL_PROD,
+    private var fallbackUrl: String = ToolsTokenStore.BASE_URL_DEV
 ) {
+
+    fun getSettingsWithFallback(token: String): Result<ToolsExtensionSettings> {
+        // Try primary URL first
+        val primaryResult = getSettings(token)
+        if (primaryResult.isSuccess) return primaryResult
+
+        // Fallback to dev URL if prod fails
+        return if (baseUrl != fallbackUrl) {
+            get("$fallbackUrl/social-media-tools/extension/settings", token) { body ->
+                val json = JSONObject(body)
+                ToolsExtensionSettings(
+                    personaProfile = json.optString("persona_profile"),
+                    customInstruction = json.optString("custom_instruction"),
+                    responseLanguage = json.optString("response_language").ifBlank { "auto" }
+                )
+            }
+        } else {
+            primaryResult
+        }
+    }
 
     fun validateToken(token: String): Result<ToolsTokenValidationResult> {
         return get("$baseUrl/social-media-tools/extension/validate-token", token) { body ->
@@ -85,7 +106,7 @@ class ToolsExtensionClient(
     // --- helpers ---
 
     private fun <T> get(url: String, token: String, parse: (String) -> T): Result<T> {
-        return runCatching {
+        return retryWithBackoff {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 15_000
@@ -102,21 +123,43 @@ class ToolsExtensionClient(
     }
 
     private fun request(method: String, url: String, token: String, body: String): Pair<Int, String> {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 15_000
-            readTimeout = 20_000
-            doInput = true
-            doOutput = body.isNotBlank()
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Authorization", "Bearer ${token.trim()}")
+        val result = retryWithBackoff {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                doInput = true
+                doOutput = body.isNotBlank()
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Authorization", "Bearer ${token.trim()}")
+            }
+            if (body.isNotBlank()) {
+                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(body) }
+            }
+            val statusCode = connection.responseCode
+            Pair(statusCode, readBody(connection, statusCode))
         }
-        if (body.isNotBlank()) {
-            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(body) }
+        return result.getOrThrow()
+    }
+
+    private fun <T> retryWithBackoff(action: () -> T): Result<T> {
+        var lastException: Exception? = null
+        var backoff = 500L
+
+        for (attempt in 1..3) {
+            try {
+                return Result.success(action())
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < 3) {
+                    Thread.sleep(backoff)
+                    backoff *= 2
+                }
+            }
         }
-        val statusCode = connection.responseCode
-        return Pair(statusCode, readBody(connection, statusCode))
+
+        return Result.failure(lastException ?: Exception("Retry failed"))
     }
 
     private fun readBody(connection: HttpURLConnection, statusCode: Int): String {

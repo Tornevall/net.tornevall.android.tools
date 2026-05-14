@@ -38,6 +38,7 @@ class SocialGptFragment : Fragment() {
     private lateinit var tokenStore: ToolsTokenStore
     private lateinit var viewModel: SocialGptViewModel
     private var pendingAutoVerifyFromIntent: Boolean = false
+    private var suppressClipboardImportUntilMs: Long = 0L
 
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         importClipboardTextIfAvailable()
@@ -204,8 +205,17 @@ class SocialGptFragment : Fragment() {
 
     private fun importSharedTextIfAvailable() {
         val sharedText = arguments?.getString(ARG_SHARED_TEXT)?.trim().orEmpty()
-        if (sharedText.isNotBlank()) {
-            binding.inputContext.setText(sharedText)
+        val cachedCapture = tokenStore.consumeLastCapturedContext(maxAgeMs = 180_000L)
+        val importedText = when {
+            cachedCapture?.text?.isNotBlank() == true -> cachedCapture.text
+            sharedText.isNotBlank() -> sharedText
+            else -> ""
+        }
+        if (importedText.isNotBlank()) {
+            binding.inputContext.setText(importedText)
+            lastImportedClipboardText = importedText
+            // Avoid immediate clipboard listener overwrite after an explicit capture import.
+            suppressClipboardImportUntilMs = System.currentTimeMillis() + 2_500L
             announceForScreenReader(getString(R.string.socialgpt_shared_text_imported))
             arguments?.remove(ARG_SHARED_TEXT)
         }
@@ -272,11 +282,14 @@ class SocialGptFragment : Fragment() {
     }
 
     private fun importClipboardTextIfAvailable() {
+        if (System.currentTimeMillis() < suppressClipboardImportUntilMs) return
+
         val clipData = clipboardManager?.primaryClip ?: return
         if (clipData.itemCount <= 0) return
 
         val text = clipData.getItemAt(0).coerceToText(requireContext())?.toString()?.trim().orEmpty()
         if (text.isBlank()) return
+        if (isLikelyOverlayMenuText(text)) return
         if (text == lastImportedClipboardText) return
 
         val currentText = binding.inputContext.text?.toString()?.trim().orEmpty()
@@ -288,6 +301,15 @@ class SocialGptFragment : Fragment() {
         binding.inputContext.setText(text)
         lastImportedClipboardText = text
         announceForScreenReader(getString(R.string.socialgpt_clipboard_imported))
+    }
+
+    private fun isLikelyOverlayMenuText(value: String): Boolean {
+        val normalized = value.lowercase()
+        if (normalized.length > 260) return false
+        return normalized.contains("capture from visible screen") ||
+            normalized.contains("capture from selected element") ||
+            normalized.contains("verify from visible screen") ||
+            normalized.contains("verify from selected element")
     }
 
     private fun loadComposerState() {

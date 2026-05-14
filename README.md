@@ -22,9 +22,13 @@ A mobile companion for **Tornevall Networks Tools** platform, providing AI-power
 - **Tabbed Settings** - Organized settings by category (Connection, SocialGPT, Capture)
 
 ### 🔒 Security & Compatibility
-- **BankID Smart Blocking** - Automatically disables capture when BankID is active
+- **Protected Apps Configurator** - Customize which apps disable Accessibility Service
+  - Default: BankID, BankID Bus, BankID ID
+  - Add/remove apps via Settings → Capture tab → "Protected apps"
+  - Automatically disables service when protected apps are active
+- **BankID Smart Blocking** - Automatically disables capture when BankID/protected apps are active
   - Prevents app from interfering with BankID authentication
-  - Auto-restarts when BankID closes
+  - Auto-restarts when protected app closes
 - **Accessibility Service with Safeguards**
   - Reads only visible screen text
   - Deep focus element detection
@@ -117,6 +121,23 @@ This grants the app permission to:
 4. **Fact-check model** - Default: `gpt-5.4`
 5. **Default instruction** - Pre-fill reply hints (e.g., "Keep it short and friendly")
 6. **Bubble size** - Small, Medium (default), or Large
+
+### 4. Configure Protected Apps (Optional)
+
+Protected apps automatically disable Accessibility Service when active. Default list includes BankID and banking apps.
+
+1. **Settings** → **Capture** tab
+2. **Protected apps** - Tap to view/edit list
+3. **Add app** - Enter package name (e.g., `com.bankid`, `com.example.app`)
+4. **Remove app** - Swipe or long-press to remove
+5. **Save** - Changes save automatically
+
+#### Default Protected Apps
+- `com.bankid` - BankID
+- `com.bankid.bus` - BankID Bus
+- `com.bankid.id` - BankID ID
+
+Add banking, payment, or other sensitive apps that should disable the service.
 
 ## Usage
 
@@ -249,21 +270,44 @@ app/src/main/
 - BankID blocks when ANY accessibility service can read screen content
 - This is a security feature to prevent credential harvesting
 
-### Our Solution
-1. **Automatic Detection** - App detects when BankID app opens
-2. **Auto-Disable Capture** - Bubble is automatically hidden/stopped
-3. **User Notification** - Clear message: "🔒 BankID detected – screen capture disabled"
-4. **Quick Recovery** - "Restart" button in notification when BankID closes
-5. **No Manual Steps** - Everything happens automatically
+### Our Solution - Protected Apps
+1. **Automatic Detection** - App detects when protected apps are active
+2. **Smart Disable** - Accessibility service disables completely (not just paused)
+3. **Customizable List** - Add/remove apps via Settings → Capture → Protected apps
+4. **Default Protected Apps** - BankID, BankID Bus, BankID ID
+5. **User Notification** - Clear message with link to re-enable when done
+6. **No Manual Steps** - Everything happens automatically
 
-### Using BankID While Tools is Active
-1. ✅ Accessibility service stays enabled (needed for capture in other apps)
-2. ✅ Open BankID app → Bubble automatically stops
-3. ✅ Complete BankID authentication safely
-4. ✅ Close BankID → Auto-restart bubble notification appears
-5. ✅ Tap "Restart" to resume capture in other apps
+#### How It Works
+- When a protected app is detected, the Accessibility Service is completely disabled
+- BankID (or protected app) cannot be blocked because the service isn't reading your screen
+- Notification guides you to re-enable the service in Settings when done
+- Service stays enabled in other apps - no need to manually toggle it
 
-No extra steps needed - just use BankID normally!
+### Customizing Protected Apps
+
+Add your own apps that should disable Accessibility Service:
+
+1. Go to **Settings** → **Capture** tab
+2. Tap **Protected apps** → **Add app**
+3. Enter the app's package name:
+   - Example: `com.bankid` (BankID)
+   - Example: `com.example.mybank` (Your bank's app)
+   - Example: `com.payapp` (Payment app)
+4. Apps automatically added: BankID, BankID Bus, BankID ID
+
+**Tip**: Look up app package names:
+- Android Settings → Apps → App info → Package name (may vary by device)
+- Online APK databases like APKPure or similar
+
+### Using Protected Apps While Tools is Active
+1. ✅ Your protected apps added to the list
+2. ✅ Open protected app → Accessibility service auto-disables
+3. ✅ Complete authentication safely (no blocking!)
+4. ✅ Close protected app → Notification appears
+5. ✅ Tap notification to re-enable service for other apps
+
+Perfect flow - just use your banking/payment apps normally!
 
 ## API Integration
 

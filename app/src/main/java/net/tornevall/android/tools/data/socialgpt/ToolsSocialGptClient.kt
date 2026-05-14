@@ -28,68 +28,93 @@ class ToolsSocialGptClient {
         language: String,
         requestMode: String,
         modifier: String = "",
-        reasoningEffort: String? = null
+        reasoningEffort: String? = null,
+        fallbackUrl: String? = null
     ): Result<ToolsSocialGptResult> {
-        return runCatching {
-            val endpoint = baseUrl.trimEnd('/') + "/ai/socialgpt/respond"
-            val url = URL(endpoint)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                doInput = true
-                doOutput = true
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("Authorization", "Bearer ${token.trim()}")
-            }
-
-            val payload = JSONObject().apply {
-                put("context", contextText)
-                put("user_prompt", promptText)
-                put("modifier", modifier)
-                put("model", model.ifBlank { DEFAULT_MODEL })
-                put("request_mode", requestMode)
-                put("response_language", language.ifBlank { "auto" })
-                put("client_name", CLIENT_NAME)
-                put("client_version", BuildConfig.VERSION_NAME)
-                put("client_platform", CLIENT_PLATFORM)
-                if (!reasoningEffort.isNullOrBlank()) {
-                    put("reasoning_effort", reasoningEffort)
+        return try {
+            Result.success(tryRequestReply(baseUrl, token, contextText, promptText, model, language, requestMode, modifier, reasoningEffort))
+        } catch (e: Exception) {
+            // Try fallback URL if provided and primary failed
+            if (fallbackUrl != null && baseUrl != fallbackUrl && e is ToolsSocialGptException) {
+                try {
+                    return Result.success(tryRequestReply(fallbackUrl, token, contextText, promptText, model, language, requestMode, modifier, reasoningEffort))
+                } catch (fallbackError: Exception) {
+                    return Result.failure(fallbackError)
                 }
             }
-
-            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
-                writer.write(payload.toString())
-            }
-
-            val statusCode = connection.responseCode
-            val rawBody = readResponseBody(connection, statusCode)
-            if (statusCode !in 200..299) {
-                throw ToolsSocialGptException(statusCode, extractErrorMessage(rawBody))
-            }
-
-            val json = JSONObject(rawBody)
-            val responseText = json.optString("response").trim()
-            if (responseText.isBlank()) {
-                throw ToolsSocialGptException(statusCode, "empty_response")
-            }
-
-            // Extract web_search metadata from nested object if available
-            val webSearch = json.optJSONObject("web_search")
-            val webSearchUsed = webSearch?.optBoolean("used", false) ?: false
-            val webSearchRequired = webSearch?.optBoolean("required", false) ?: false
-            val webSearchFailed = webSearch?.optBoolean("failed", false) ?: false
-
-            ToolsSocialGptResult(
-                responseText = responseText,
-                model = json.optString("model", model.ifBlank { DEFAULT_MODEL }),
-                usedFallbackModel = json.optBoolean("used_fallback_model", false),
-                webSearchUsed = webSearchUsed,
-                webSearchRequired = webSearchRequired,
-                webSearchFailed = webSearchFailed
-            )
+            Result.failure(e)
         }
+    }
+
+    private fun tryRequestReply(
+        baseUrl: String,
+        token: String,
+        contextText: String,
+        promptText: String,
+        model: String,
+        language: String,
+        requestMode: String,
+        modifier: String = "",
+        reasoningEffort: String? = null
+    ): ToolsSocialGptResult {
+        val endpoint = baseUrl.trimEnd('/') + "/ai/socialgpt/respond"
+        val url = URL(endpoint)
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            doInput = true
+            doOutput = true
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("Authorization", "Bearer ${token.trim()}")
+        }
+
+        val payload = JSONObject().apply {
+            put("context", contextText)
+            put("user_prompt", promptText)
+            put("modifier", modifier)
+            put("model", model.ifBlank { DEFAULT_MODEL })
+            put("request_mode", requestMode)
+            put("response_language", language.ifBlank { "auto" })
+            put("client_name", CLIENT_NAME)
+            put("client_version", BuildConfig.VERSION_NAME)
+            put("client_platform", CLIENT_PLATFORM)
+            if (!reasoningEffort.isNullOrBlank()) {
+                put("reasoning_effort", reasoningEffort)
+            }
+        }
+
+        OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+            writer.write(payload.toString())
+        }
+
+        val statusCode = connection.responseCode
+        val rawBody = readResponseBody(connection, statusCode)
+        if (statusCode !in 200..299) {
+            throw ToolsSocialGptException(statusCode, extractErrorMessage(rawBody))
+        }
+
+        val json = JSONObject(rawBody)
+        val responseText = json.optString("response").trim()
+        if (responseText.isBlank()) {
+            throw ToolsSocialGptException(statusCode, "empty_response")
+        }
+
+        // Extract web_search metadata from nested object if available
+        val webSearch = json.optJSONObject("web_search")
+        val webSearchUsed = webSearch?.optBoolean("used", false) ?: false
+        val webSearchRequired = webSearch?.optBoolean("required", false) ?: false
+        val webSearchFailed = webSearch?.optBoolean("failed", false) ?: false
+
+        return ToolsSocialGptResult(
+            responseText = responseText,
+            model = json.optString("model", model.ifBlank { DEFAULT_MODEL }),
+            usedFallbackModel = json.optBoolean("used_fallback_model", false),
+            webSearchUsed = webSearchUsed,
+            webSearchRequired = webSearchRequired,
+            webSearchFailed = webSearchFailed
+        )
     }
 
     private fun readResponseBody(connection: HttpURLConnection, statusCode: Int): String {

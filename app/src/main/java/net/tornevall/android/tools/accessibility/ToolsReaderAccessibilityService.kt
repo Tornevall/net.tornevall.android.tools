@@ -46,6 +46,7 @@ import net.tornevall.android.tools.overlay.ToolsBubbleService
 class ToolsReaderAccessibilityService : AccessibilityService() {
 
     private lateinit var tokenStore: ToolsTokenStore
+    private var protectedShutdownTriggered: Boolean = false
 
     private val accessibilityButtonCallback =
         object : AccessibilityButtonController.AccessibilityButtonCallback() {
@@ -54,7 +55,11 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
                     return
                 }
                 if (isProtectedAppForeground) {
-                    toastProtectedAppHint()
+                    Toast.makeText(
+                        this@ToolsReaderAccessibilityService,
+                        "🔒 BankID detected - Accessibility is disabled for security.",
+                        Toast.LENGTH_LONG
+                    ).show()
                     return
                 }
                 val bubbleIntent = Intent(this@ToolsReaderAccessibilityService, ToolsBubbleService::class.java)
@@ -83,16 +88,53 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
         val packageName = event?.packageName?.toString().orEmpty()
         val protectedNow = isProtectedPackage(packageName)
         isProtectedAppForeground = protectedNow
-
+        
         if (protectedNow) {
+            if (protectedShutdownTriggered) {
+                return
+            }
+            protectedShutdownTriggered = true
+
+            // Protected app detected - take aggressive action
             if (ToolsBubbleService.isRunning) {
                 stopService(Intent(this, ToolsBubbleService::class.java))
-                showBankIdBlockingNotification()
             }
+            
+            // Disable this accessibility service completely
+            disableAccessibilityService()
+            
+            // Show notification
+            showBankIdBlockingNotification()
         } else {
-            // Clear BankID notification when user leaves BankID app
+            protectedShutdownTriggered = false
+            // Clear notification when user leaves protected app
             val nm = getSystemService(NotificationManager::class.java)
             nm?.cancel(BANKID_NOTIFICATION_ID)
+        }
+    }
+
+    private fun isProtectedPackage(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        val normalized = packageName.lowercase()
+        val protectedApps = tokenStore.getProtectedApps()
+        return protectedApps.any { normalized.startsWith(it) }
+    }
+
+    private fun disableAccessibilityService() {
+        try {
+            // This is the supported way for an AccessibilityService to disable itself.
+            disableSelf()
+            Toast.makeText(
+                this,
+                "🔒 BankID detected - Accessibility service disabled. Re-enable in Settings when done.",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                "🔒 BankID detected - Please disable Accessibility in Settings for security.",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -245,19 +287,40 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
         if (android.os.Build.VERSION.SDK_INT < 33 || hasPostNotificationsPermission) {
             nm?.notify(NOTIFICATION_ID, notification)
         }
-    }
-
+     }
+ 
     private fun triggerCaptureAndOpen(
         scrollCapture: Boolean = false,
         focusedCapture: Boolean = false,
         autoVerify: Boolean = false
     ) {
         if (isProtectedAppForeground) {
-            toastProtectedAppHint()
+            Toast.makeText(
+                this,
+                "🔒 BankID detected - Accessibility is disabled for security.",
+                Toast.LENGTH_LONG
+            ).show()
             return
         }
 
-        val capturedText = captureCurrentWindowText(scrollCapture = scrollCapture, focusedCapture = focusedCapture)
+        val captureMode = when {
+            focusedCapture -> "focused"
+            scrollCapture -> "scroll"
+            else -> "visible"
+        }
+        val capturedText = captureBestEffortText(
+            scrollCapture = scrollCapture,
+            focusedCapture = focusedCapture
+        )
+        val sourcePackage = rootInActiveWindow?.packageName?.toString().orEmpty()
+        if (::tokenStore.isInitialized && capturedText.isNotBlank()) {
+            tokenStore.saveLastCapturedContext(
+                text = capturedText,
+                sourcePackage = sourcePackage,
+                captureMode = captureMode
+            )
+        }
+
         val openIntent = Intent(this, MainActivity::class.java).apply {
             action = Intent.ACTION_SEND
             type = "text/plain"
@@ -281,29 +344,78 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun toastProtectedAppHint() {
-        Toast.makeText(
-            this,
-            "🔒 BankID detected – screen capture disabled for security. The bubble has been hidden.",
-            Toast.LENGTH_LONG
-        ).show()
+    private fun captureBestEffortText(scrollCapture: Boolean, focusedCapture: Boolean): String {
+        // Give popup overlays a brief moment to close before reading the active window.
+        SystemClock.sleep(CAPTURE_INITIAL_DELAY_MS)
+
+        var best = ""
+        for (attempt in 0 until CAPTURE_RETRY_ATTEMPTS) {
+            val raw = captureCurrentWindowText(
+                scrollCapture = scrollCapture,
+                focusedCapture = focusedCapture
+            )
+            val sanitized = sanitizeCapturedText(raw)
+            if (sanitized.isNotBlank()) {
+                best = sanitized
+            }
+
+            val sourcePackage = rootInActiveWindow?.packageName?.toString().orEmpty()
+            val shouldRetry = sourcePackage.equals(packageName, ignoreCase = true) ||
+                isLikelyOverlayMenuCapture(sanitized)
+            if (!shouldRetry) {
+                break
+            }
+            if (attempt < CAPTURE_RETRY_ATTEMPTS - 1) {
+                SystemClock.sleep(CAPTURE_RETRY_DELAY_MS)
+            }
+        }
+        return best
+    }
+
+    private fun sanitizeCapturedText(raw: String): String {
+        if (raw.isBlank()) return ""
+        return raw
+            .replace("\r", "\n")
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .filterNot { it == "Tools" }
+            .distinct()
+            .joinToString("\n")
+            .trim()
+    }
+
+    private fun isLikelyOverlayMenuCapture(text: String): Boolean {
+        if (text.isBlank()) return false
+        val normalized = text.lowercase()
+        if (normalized.length > 260) return false
+        val overlayMarkers = listOf(
+            "capture from visible screen",
+            "capture from selected element",
+            "verify from visible screen",
+            "verify from selected element"
+        )
+        return overlayMarkers.any { normalized.contains(it) }
     }
 
     private fun showBankIdBlockingNotification() {
         val nm = getSystemService(NotificationManager::class.java) ?: return
-        val restartIntent = Intent(this, ToolsBubbleService::class.java)
-        val restartPendingIntent = PendingIntent.getService(
-            this, 1, restartIntent,
+        
+        // Intent to re-enable accessibility service when user is done with BankID
+        val settingsIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val settingsPendingIntent = PendingIntent.getActivity(
+            this, 2, settingsIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("BankID in use")
-            .setContentText("Restart bubble after BankID closes")
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(false)
-            .addAction(0, "Restart", restartPendingIntent)
+            .setContentTitle("🔒 BankID Security")
+            .setContentText("Accessibility disabled for BankID. Open Settings to re-enable when done.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(true)
+            .addAction(0, "Open Settings", settingsPendingIntent)
             .build()
 
         val hasPostNotificationsPermission =
@@ -343,11 +455,9 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
         const val EXTRA_AUTO_VERIFY = "net.tornevall.android.tools.EXTRA_AUTO_VERIFY"
         private const val MAX_SCROLL_STEPS = 4
         private const val SCROLL_SETTLE_MS = 260L
-        private val PROTECTED_PACKAGES = setOf(
-            "com.bankid",
-            "com.bankid.bus",
-            "com.bankid.id"
-        )
+        private const val CAPTURE_INITIAL_DELAY_MS = 140L
+        private const val CAPTURE_RETRY_DELAY_MS = 120L
+        private const val CAPTURE_RETRY_ATTEMPTS = 4
         @Volatile
         private var isProtectedAppForeground: Boolean = false
         @Volatile
@@ -367,11 +477,6 @@ class ToolsReaderAccessibilityService : AccessibilityService() {
             return true
         }
 
-        private fun isProtectedPackage(packageName: String): Boolean {
-            if (packageName.isBlank()) return false
-            val normalized = packageName.lowercase()
-            return PROTECTED_PACKAGES.any { normalized.startsWith(it) } || normalized.contains("bankid")
-        }
 
         fun diagnose(context: Context): String {
             val serviceId = "${context.packageName}/.accessibility.ToolsReaderAccessibilityService"
