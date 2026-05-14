@@ -24,6 +24,7 @@ import net.tornevall.android.tools.data.settings.ToolsTokenStore
 import net.tornevall.android.tools.data.socialgpt.ToolsExtensionClient
 import net.tornevall.android.tools.data.socialgpt.ToolsExtensionSettings
 import net.tornevall.android.tools.data.socialgpt.ToolsSocialGptException
+import net.tornevall.android.tools.data.socialgpt.applyToolsExtensionSettingsToStore
 import net.tornevall.android.tools.databinding.FragmentSettingsBinding
 import kotlin.concurrent.thread
 
@@ -112,7 +113,9 @@ class SettingsFragment : Fragment() {
         val presetLabel = quickReplyPresets
             .firstOrNull { it.first == tokenStore.getQuickReplyPreset() }?.second ?: "Balanced default"
         binding.inputQuickReplyPreset.setText(presetLabel, false)
-        binding.inputQuickReplyInstruction.setText(tokenStore.getQuickReplyInstruction())
+        binding.inputQuickReplyInstruction.setText(
+            tokenStore.getQuickReplyInstruction().ifBlank { tokenStore.getPersonaProfile() }
+        )
         updateTokenStatus()
     }
 
@@ -325,21 +328,7 @@ class SettingsFragment : Fragment() {
              val settingsResult = client.getSettingsWithFallback(token)
              runOnUiSafe {
                  settingsResult.onSuccess { s ->
-                     if (s.personaProfile.isNotBlank()) {
-                         binding.inputPersonaProfile.setText(s.personaProfile)
-                         tokenStore.setPersonaProfile(s.personaProfile)
-                     }
-                     if (s.responseLanguage.isNotBlank()) {
-                         binding.inputAnswerLanguage.setText(s.responseLanguage.ifBlank { "auto" }, false)
-                         tokenStore.setAnswerLanguage(s.responseLanguage.ifBlank { "auto" })
-                     }
-                     if (s.customInstruction.isNotBlank()) {
-                         binding.inputQuickReplyInstruction.setText(s.customInstruction)
-                         tokenStore.setQuickReplyInstruction(s.customInstruction)
-                         if (tokenStore.getSavedInstruction().isBlank()) {
-                             tokenStore.setSavedInstruction(s.customInstruction)
-                         }
-                     }
+                      applyRemoteSettingsToUiAndStore(s)
                  }
              }
          }
@@ -362,17 +351,7 @@ class SettingsFragment : Fragment() {
              runOnUiSafe {
                 setupDropdowns(models)
                 settingsResult.onSuccess { s ->
-                    binding.inputPersonaProfile.setText(s.personaProfile)
-                    binding.inputAnswerLanguage.setText(s.responseLanguage.ifBlank { "auto" }, false)
-                    binding.inputQuickReplyInstruction.setText(s.customInstruction)
-                    tokenStore.setPersonaProfile(s.personaProfile)
-                    tokenStore.setAnswerLanguage(s.responseLanguage.ifBlank { "auto" })
-                    if (s.customInstruction.isNotBlank()) {
-                        tokenStore.setQuickReplyInstruction(s.customInstruction)
-                        if (tokenStore.getSavedInstruction().isBlank()) {
-                            tokenStore.setSavedInstruction(s.customInstruction)
-                        }
-                    }
+                     applyRemoteSettingsToUiAndStore(s)
                     val baseUrl = if (tokenStore.isDevMode()) ToolsTokenStore.BASE_URL_DEV else ToolsTokenStore.BASE_URL_PROD
                     val host = baseUrl.removePrefix("https://").removePrefix("http://").split("/").first()
                     setSyncStatus("Settings loaded from $host")
@@ -428,6 +407,16 @@ class SettingsFragment : Fragment() {
         val presetKey = quickReplyPresets.firstOrNull { it.second == presetLabel }?.first ?: "default"
         tokenStore.setQuickReplyPreset(presetKey)
         tokenStore.setQuickReplyInstruction(binding.inputQuickReplyInstruction.text?.toString().orEmpty())
+    }
+
+    private fun applyRemoteSettingsToUiAndStore(settings: ToolsExtensionSettings) {
+        val syncPlan = applyToolsExtensionSettingsToStore(tokenStore, settings)
+        binding.inputPersonaProfile.setText(settings.personaProfile)
+        binding.inputAnswerLanguage.setText(settings.responseLanguage.ifBlank { "auto" }, false)
+        binding.inputVerifyLanguage.setText(settings.verifyFactLanguage.ifBlank { "auto" }, false)
+        if (syncPlan.composerInstruction.isNotBlank()) {
+            binding.inputQuickReplyInstruction.setText(syncPlan.composerInstruction)
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

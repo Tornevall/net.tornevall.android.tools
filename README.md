@@ -39,6 +39,10 @@ A mobile companion for **Tornevall Networks Tools** platform, providing AI-power
 - **Persisted Composer State**
   - Auto-saves your reply instructions
   - Remembers mood, model, and language preferences
+- **Tools Persona Sync**
+  - The app refreshes SocialGPT settings from `GET /api/social-media-tools/extension/settings`
+  - `persona_profile` is treated as the primary reusable composer persona/prompt from Tools
+  - Remote persona updates can refresh the Android composer automatically when your local prompt still matches the last Tools-synced value
 - **Mood & Model Selection**
   - Reply mood: balanced, friendly, formal, firm, casual
   - Reply model: gpt-4o (default) or others

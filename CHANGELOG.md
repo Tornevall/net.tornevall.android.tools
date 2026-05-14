@@ -20,16 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Web Search Feedback** - Visual indicator when web search is used in responses
 - **Clickable Links in Responses** - Automatic detection of markdown and plain URLs
 - **Tabbed Settings UI** - Organized by Connection, SocialGPT, Capture tabs
+- **Tools Persona Sync Guidance** - The Android AGENTS contract now documents that `GET /api/social-media-tools/extension/settings` is the correct source for SocialGPT persona/profile sync and explains how Android should map `persona_profile`, `custom_instruction`, and language fields.
 
 ### Fixed
 - BankID compatibility - Accessibility service now disables completely when protected apps are active
 - Bubble panel layout - Fixed overlapping buttons and improved spacing
 - Response rendering - Added proper HTML link support with LinkMovementMethod
+- SocialGPT persona refresh - the Android app now treats the Tools-side `persona_profile` as the primary reusable composer instruction, keeps a separate last-synced Tools prompt marker, and refreshes the composer when the remote Tools persona changes instead of staying stuck on one older locally cached instruction.
 
 ### Changed
 - Protected apps now configurable instead of hardcoded
 - Bubble panel now draggable and compact (220dp width)
 - Better notification messaging for protected app events
+- SocialGPT startup/resume now also refreshes the reusable prompt from `GET /api/social-media-tools/extension/settings`, while still preserving explicit local in-progress edits when they no longer match the previous Tools-synced value.
 
 ## [1.0.0] - 2026-04-14
 

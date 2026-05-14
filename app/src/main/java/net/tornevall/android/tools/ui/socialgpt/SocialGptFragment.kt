@@ -24,6 +24,9 @@ import com.google.android.material.button.MaterialButton
 import net.tornevall.android.tools.R
 import net.tornevall.android.tools.accessibility.ToolsReaderAccessibilityService
 import net.tornevall.android.tools.data.settings.ToolsTokenStore
+import net.tornevall.android.tools.data.socialgpt.ToolsExtensionClient
+import net.tornevall.android.tools.data.socialgpt.applyToolsExtensionSettingsToStore
+import net.tornevall.android.tools.data.socialgpt.resolveInitialSocialGptInstruction
 import net.tornevall.android.tools.databinding.FragmentSocialgptBinding
 import net.tornevall.android.tools.overlay.ToolsBubbleService
 import java.net.URI
@@ -219,6 +222,7 @@ class SocialGptFragment : Fragment() {
         clipboardManager?.addPrimaryClipChangedListener(clipboardListener)
         // If user copied text in another app and then returned, import on resume.
         importClipboardTextIfAvailable()
+        syncSettingsFromToolsIfPossible()
     }
 
     override fun onPause() {
@@ -437,14 +441,53 @@ class SocialGptFragment : Fragment() {
     }
 
     private fun loadComposerState() {
-        val savedInstruction = tokenStore.getSavedInstruction()
-        val toolsInstruction = tokenStore.getQuickReplyInstruction()
-        val initialInstruction = when {
-            savedInstruction.isNotBlank() -> savedInstruction
-            toolsInstruction.isNotBlank() -> toolsInstruction
-            else -> getString(R.string.socialgpt_default_instruction)
-        }
+        val initialInstruction = resolveInitialSocialGptInstruction(
+            savedInstruction = tokenStore.getSavedInstruction(),
+            quickReplyInstruction = tokenStore.getQuickReplyInstruction(),
+            personaProfile = tokenStore.getPersonaProfile(),
+            defaultInstruction = getString(R.string.socialgpt_default_instruction)
+        )
         binding.inputPrompt.setText(initialInstruction)
+    }
+
+    private fun syncSettingsFromToolsIfPossible() {
+        val token = tokenStore.getToken().orEmpty().trim()
+        if (token.isBlank()) {
+            return
+        }
+
+        val promptAtDispatch = binding.inputPrompt.text?.toString().orEmpty().trim()
+        val previousSyncedInstruction = tokenStore.getLastSyncedToolsInstruction().trim()
+        thread {
+            val result = extensionClient().getSettingsWithFallback(token)
+            runOnUiSafe {
+                result.onSuccess { settings ->
+                    val syncPlan = applyToolsExtensionSettingsToStore(tokenStore, settings)
+                    val currentPrompt = binding.inputPrompt.text?.toString().orEmpty().trim()
+                    val nextInstruction = resolveInitialSocialGptInstruction(
+                        savedInstruction = tokenStore.getSavedInstruction(),
+                        quickReplyInstruction = tokenStore.getQuickReplyInstruction(),
+                        personaProfile = tokenStore.getPersonaProfile(),
+                        defaultInstruction = getString(R.string.socialgpt_default_instruction)
+                    )
+                    val fieldStillUnchanged = currentPrompt == promptAtDispatch
+                    val fieldMatchesPreviousToolsSync = previousSyncedInstruction.isNotBlank() && currentPrompt == previousSyncedInstruction
+                    if (syncPlan.shouldReplaceSavedInstruction && nextInstruction.isNotBlank() && (currentPrompt.isBlank() || fieldStillUnchanged || fieldMatchesPreviousToolsSync)) {
+                        binding.inputPrompt.setText(nextInstruction)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun extensionClient(): ToolsExtensionClient {
+        val baseUrl = tokenStore.getBaseUrl()
+        val fallbackUrl = if (tokenStore.isDevMode()) {
+            ToolsTokenStore.BASE_URL_PROD
+        } else {
+            ToolsTokenStore.BASE_URL_DEV
+        }
+        return ToolsExtensionClient(baseUrl, fallbackUrl)
     }
 
     private fun renderSuggestionButtons(

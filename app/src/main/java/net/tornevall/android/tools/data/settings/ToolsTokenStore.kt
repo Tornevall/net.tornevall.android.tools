@@ -1,4 +1,4 @@
-package net.tornevall.android.tools.data.settings
+säpackage net.tornevall.android.tools.data.settings
 
 import android.content.Context
 
@@ -50,6 +50,11 @@ class ToolsTokenStore(context: Context) {
 
     fun getQuickReplyInstruction(): String = prefs.getString(KEY_QUICK_REPLY_INSTRUCTION, "").orEmpty()
     fun setQuickReplyInstruction(instruction: String) { prefs.edit().putString(KEY_QUICK_REPLY_INSTRUCTION, instruction.trim()).apply() }
+
+    fun getLastSyncedToolsInstruction(): String = prefs.getString(KEY_LAST_SYNCED_TOOLS_INSTRUCTION, "").orEmpty()
+    fun setLastSyncedToolsInstruction(instruction: String) {
+        prefs.edit().putString(KEY_LAST_SYNCED_TOOLS_INSTRUCTION, instruction.trim()).apply()
+    }
 
     // --- SocialGPT composer state ---
     fun getSavedInstruction(): String = prefs.getString(KEY_SAVED_INSTRUCTION, "").orEmpty()
@@ -161,6 +166,7 @@ class ToolsTokenStore(context: Context) {
         private const val KEY_REPLY_MOOD = "preferred_reply_mood"
         private const val KEY_QUICK_REPLY_PRESET = "default_quick_reply_preset"
         private const val KEY_QUICK_REPLY_INSTRUCTION = "default_quick_reply_custom_instruction"
+        private const val KEY_LAST_SYNCED_TOOLS_INSTRUCTION = "last_synced_tools_instruction"
         private const val KEY_SAVED_INSTRUCTION = "socialgpt_saved_instruction"
         private const val KEY_SAVED_MOOD = "socialgpt_saved_mood"
         private const val KEY_ACCESSIBILITY_SHORTCUT_ENABLED = "accessibility_shortcut_enabled"

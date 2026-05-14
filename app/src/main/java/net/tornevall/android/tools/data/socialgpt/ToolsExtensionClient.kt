@@ -16,9 +16,14 @@ data class ToolsTokenValidationResult(
 )
 
 data class ToolsExtensionSettings(
+    val responderName: String = "",
     val personaProfile: String = "",
     val customInstruction: String = "",
-    val responseLanguage: String = "auto"
+    val autoDetectResponder: Boolean = true,
+    val mood: String = "",
+    val customMood: String = "",
+    val responseLanguage: String = "auto",
+    val verifyFactLanguage: String = "auto"
 )
 
 class ToolsExtensionClient(
@@ -170,18 +175,37 @@ class ToolsExtensionClient(
         // Modern API shape uses { ok, settings: { ... } }, keep fallback for legacy flat payloads.
         val settings = root.optJSONObject("settings") ?: root
 
+        val responderName = settings.optString("responder_name")
+            .ifBlank { root.optString("responder_name") }
         val personaProfile = settings.optString("persona_profile")
             .ifBlank { root.optString("persona_profile") }
         val customInstruction = settings.optString("custom_instruction")
             .ifBlank { root.optString("custom_instruction") }
+        val autoDetectResponder = if (settings.has("auto_detect_responder")) {
+            settings.optBoolean("auto_detect_responder", true)
+        } else {
+            root.optBoolean("auto_detect_responder", true)
+        }
+        val mood = settings.optString("mood")
+            .ifBlank { root.optString("mood") }
+        val customMood = settings.optString("custom_mood")
+            .ifBlank { root.optString("custom_mood") }
         val responseLanguage = settings.optString("response_language")
             .ifBlank { root.optString("response_language") }
             .ifBlank { "auto" }
+        val verifyFactLanguage = settings.optString("verify_fact_language")
+            .ifBlank { root.optString("verify_fact_language") }
+            .ifBlank { "auto" }
 
         return ToolsExtensionSettings(
+            responderName = responderName,
             personaProfile = personaProfile,
             customInstruction = customInstruction,
-            responseLanguage = responseLanguage
+            autoDetectResponder = autoDetectResponder,
+            mood = mood,
+            customMood = customMood,
+            responseLanguage = responseLanguage,
+            verifyFactLanguage = verifyFactLanguage
         )
     }
 

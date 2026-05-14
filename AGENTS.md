@@ -1699,6 +1699,7 @@ Single payload:
 Extension (`/social-media-tools/extension`):
 - `GET /validate-token`
 - `GET /settings`
+- `POST /facebook-participant-history`
 - `GET /models?refresh=true`
 - `PUT /settings`
 - `GET /test`
@@ -1722,11 +1723,67 @@ OpenAI access note:
 }
 ```
 
+Typical `GET /settings` response shape:
+```json
+{
+  "ok": true,
+  "settings": {
+    "responder_name": "Thomas",
+    "persona_profile": "Factual and concise",
+    "custom_instruction": "Avoid overstatements",
+    "auto_detect_responder": true,
+    "mood": "Neutral and formal",
+    "custom_mood": "",
+    "response_language": "sv",
+    "verify_fact_language": "auto",
+    "facebook_admin_stats_enabled": true,
+    "facebook_participant_scanner_enabled": false,
+    "facebook_participant_group_context": "",
+    "facebook_participant_group_contexts_by_group_id": {}
+  },
+  "available_models": ["gpt-5.4", "gpt-4o", "gpt-4o-mini"],
+  "default_model": "gpt-4o-mini",
+  "models_source": "provider",
+  "models_warning": ""
+}
+```
+
 Additive settings note:
 - `GET /settings` and `PUT /settings` can now also carry `facebook_admin_stats_enabled=true|false`, which is the Tools-side on/off switch for the SocialGPT Facebook admin activity workflow. Browser clients may mirror that flag back into their own local popup/config checkbox on the next settings refresh.
+- `GET /settings` and `PUT /settings` can now also carry additive `facebook_participant_group_contexts_by_group_id`, keyed by Facebook `/groups/<id>` path segment. Android/mobile participant-analysis clients should treat this as the authoritative Tools-synced rules/context map for per-group participant-request moderation.
+
+`POST /facebook-participant-history` guidance:
+- Auth: same personal AI-capable bearer token model as the other extension endpoints.
+- Request body:
+```json
+{
+  "page_url": "https://www.facebook.com/groups/123456789/participant_requests",
+  "group_id": "123456789",
+  "period_days": 180,
+  "candidates": [
+    {
+      "name": "Example Person",
+      "profile_url": "https://www.facebook.com/groups/123456789/user/987654321/",
+      "profile_user_id": "987654321"
+    }
+  ]
+}
+```
+- Success payload can now include earlier approvals as well as rejections for matching linked logged groups, with additive participant rows such as `matched`, `decision_count`, `approved_count`, `approved_membership_request_count`, `approved_pending_post_count`, `approved_regular_pending_post_count`, `approved_anonymous_pending_post_count`, `approved_other_count`, `first_seen_at`, `last_seen_at`, `first_approved_at`, `last_approved_at`, `latest_outcome`, plus the earlier rejection-focused fields.
+- Android/mobile participant-analysis clients should call this endpoint when they can extract one or more candidate names/profile URLs/profile user ids from the currently visible Facebook participant-request surface, so the same moderation-history context used by the browser helper can be shown/injected on mobile too.
 
 Android note:
 - `responder_name` still exists in the backend settings contract for extension/web parity, but Android SocialGPT should not require a responder-name field in its primary workflow.
+- The endpoint already exists and is the correct Android source of truth for SocialGPT persona/settings sync; Android should not guess these values locally when a valid Tools bearer token is available.
+- Android should treat `settings.persona_profile` as the primary reusable SocialGPT persona/system prompt coming from Tools. `settings.custom_instruction` is additive/fallback metadata and should only become the reusable composer instruction when `persona_profile` is empty.
+- Recommended Android sync order for the reusable composer prompt is: explicit local in-progress prompt override → last Tools-synced reusable instruction → `settings.persona_profile` → `settings.custom_instruction` → app default prompt.
+- Recommended Android refresh points: when the token is validated, when the Settings screen loads/syncs, and when the SocialGPT composer screen resumes. When Tools sends a new persona, Android should only overwrite the locally saved reusable prompt if the current local value still matches the previously synced Tools value or is blank.
+- Recommended Android local-field mapping from `GET /settings`:
+  - `settings.persona_profile` → reusable SocialGPT composer instruction / persona cache
+  - `settings.custom_instruction` → additive fallback only when `persona_profile` is blank
+  - `settings.response_language` → default reply language
+  - `settings.verify_fact_language` → default verify/fact-check language
+  - `available_models[]` / `default_model` → reply/verify model pickers when the Android UI wants to mirror Tools model availability
 
 ---
 
@@ -2283,6 +2340,27 @@ Current implementation in this repo:
   - Persist `Your instruction` locally and reuse it until changed.
   - Treat reply mode as suggestion-first, with follow-up refinement through a modify box and mood dropdown.
   - Always signal Android origin through stable SocialGPT client metadata so Tools API can simplify mobile-specific handling when needed.
+  - Facebook `participant_requests` on Android must be treated as a screen-capture-first workflow, not as a browser-network/GraphQL workflow. Unless Android later gets privileged WebView/network hooks for that exact Facebook surface, do **not** assume that the same GraphQL payloads used by `projects/socialgpt-chrome/js/content-script.js` are available on-device.
+  - The Android/mobile embryo for participant analysis must still reuse the same Tools-backed rule/history sources as browser SocialGPT:
+    - `GET|PUT /api/social-media-tools/extension/settings` for `facebook_participant_group_contexts_by_group_id`
+    - `POST /api/social-media-tools/extension/facebook-participant-history` for earlier approval/rejection context
+  - Current mobile-view recognition markers (from the 2026-05-14 reference screenshots) that Android capture logic should detect before offering participant-analysis actions:
+    - top moderation header like `Att granska`
+    - active tab like `Deltagare <count>`
+    - participant card rows that include `Har skickat en kommentar. Förhandsgranska`
+    - participant card actions such as `Godkänn`, `Tacka nej`, and `...`
+    - preview bottom sheet/dialog title `Förhandsgranska kommentar`
+    - deep-followup link `Visa ursprungligt inlägg`
+    - original-post sheet title in the form `<Name>s inlägg`
+    - visible post text, visible comment thread bubbles, visible membership questions, and visible answers
+  - The Android/mobile participant-analysis capture path should therefore be modeled as a sequential, preview-first capture session:
+    1. capture the visible participant card
+    2. capture the preview-comment sheet
+    3. optionally follow `Visa ursprungligt inlägg`
+    4. capture one or more additional visible screens while scrolling the original post/comment thread
+    5. keep the screen awake and the current Facebook surface open while the capture session is active
+  - Anchoring is expected to be weaker than in the browser helper. The first Android embryo should anchor analysis state to the currently captured Facebook participant/request/post surface and store each capture step with an explicit stage label such as `card`, `preview_comment`, `original_post`, or `original_post_scrolled` rather than pretending it has one stable DOM anchor.
+  - Android/mobile participant-analysis prompts should clearly mark visible OCR/screen text as observational context only and should keep using Tools as the source of truth for group rules/history. Mobile should not invent a separate local moderation-rules model.
 
 ---
 
