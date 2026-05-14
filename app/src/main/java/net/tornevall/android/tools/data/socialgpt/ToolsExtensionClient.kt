@@ -34,12 +34,7 @@ class ToolsExtensionClient(
         // Fallback to dev URL if prod fails
         return if (baseUrl != fallbackUrl) {
             get("$fallbackUrl/social-media-tools/extension/settings", token) { body ->
-                val json = JSONObject(body)
-                ToolsExtensionSettings(
-                    personaProfile = json.optString("persona_profile"),
-                    customInstruction = json.optString("custom_instruction"),
-                    responseLanguage = json.optString("response_language").ifBlank { "auto" }
-                )
+                parseSettingsBody(body)
             }
         } else {
             primaryResult
@@ -61,12 +56,7 @@ class ToolsExtensionClient(
 
     fun getSettings(token: String): Result<ToolsExtensionSettings> {
         return get("$baseUrl/social-media-tools/extension/settings", token) { body ->
-            val json = JSONObject(body)
-            ToolsExtensionSettings(
-                personaProfile = json.optString("persona_profile"),
-                customInstruction = json.optString("custom_instruction"),
-                responseLanguage = json.optString("response_language").ifBlank { "auto" }
-            )
+            parseSettingsBody(body)
         }
     }
 
@@ -173,6 +163,26 @@ class ToolsExtensionClient(
             val json = JSONObject(rawBody)
             json.optString("message").ifBlank { json.optString("error").ifBlank { rawBody } }
         }.getOrDefault(rawBody)
+    }
+
+    private fun parseSettingsBody(rawBody: String): ToolsExtensionSettings {
+        val root = JSONObject(rawBody)
+        // Modern API shape uses { ok, settings: { ... } }, keep fallback for legacy flat payloads.
+        val settings = root.optJSONObject("settings") ?: root
+
+        val personaProfile = settings.optString("persona_profile")
+            .ifBlank { root.optString("persona_profile") }
+        val customInstruction = settings.optString("custom_instruction")
+            .ifBlank { root.optString("custom_instruction") }
+        val responseLanguage = settings.optString("response_language")
+            .ifBlank { root.optString("response_language") }
+            .ifBlank { "auto" }
+
+        return ToolsExtensionSettings(
+            personaProfile = personaProfile,
+            customInstruction = customInstruction,
+            responseLanguage = responseLanguage
+        )
     }
 
     companion object {
