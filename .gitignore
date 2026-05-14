@@ -47,3 +47,4 @@ signing.properties
 *.tmp
 *.swp
 *.swo
+docs/socialgpt-chrome
