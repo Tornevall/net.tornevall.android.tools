@@ -4,6 +4,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.text.TextUtils
@@ -40,6 +42,8 @@ class SocialGptFragment : Fragment() {
     private lateinit var viewModel: SocialGptViewModel
     private var pendingAutoVerifyFromIntent: Boolean = false
     private var suppressClipboardImportUntilMs: Long = 0L
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private var pendingVerifyRunnable: Runnable? = null
 
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         importClipboardTextIfAvailable()
@@ -96,17 +100,22 @@ class SocialGptFragment : Fragment() {
         }
 
         binding.buttonVerifyFact.setOnClickListener {
-            viewModel.generateDraft(
-                token = tokenStore.getToken().orEmpty(),
-                baseUrl = tokenStore.getBaseUrl(),
-                contextText = binding.inputContext.text?.toString().orEmpty(),
-                // Verify mode no longer depends on free-form instruction input.
-                promptText = "",
-                model = tokenStore.getVerifyModel().ifBlank { "gpt-5.4" },
-                language = tokenStore.getVerifyLanguage().ifBlank { "auto" },
-                mood = tokenStore.getReplyMood().ifBlank { "balanced" },
-                requestMode = SocialGptRequestMode.VERIFY
-            )
+            if (pendingVerifyRunnable != null) {
+                runVerifyNow()
+            } else {
+                armAutoVerify()
+            }
+        }
+
+        binding.inputVerifyDetails.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                postponeAutoVerify(VERIFY_FOCUS_PAUSE_MS)
+            }
+        }
+        binding.inputVerifyDetails.doAfterTextChanged {
+            if (pendingVerifyRunnable != null) {
+                cancelPendingAutoVerify(showHint = true)
+            }
         }
 
         binding.buttonVerifyFollowup.setOnClickListener {
@@ -194,10 +203,6 @@ class SocialGptFragment : Fragment() {
                 getString(R.string.socialgpt_loading)
             }
             binding.textVerifyFactBody.movementMethod = LinkMovementMethod.getInstance()
-            if (!state.isLoading && state.lastMode == SocialGptRequestMode.VERIFY && state.factCheckText.isNotBlank()) {
-                binding.inputVerifyFollowup.text?.clear()
-            }
-
             if (hasResponse) {
                 announceForScreenReader(getString(R.string.socialgpt_response_updated))
                 if (binding.switchReadAfterGenerate.isChecked) {
@@ -231,6 +236,8 @@ class SocialGptFragment : Fragment() {
         }
         if (importedText.isNotBlank()) {
             binding.inputContext.setText(importedText)
+            binding.inputVerifyDetails.text?.clear()
+            cancelPendingAutoVerify(showHint = false)
             lastImportedClipboardText = importedText
             // Avoid immediate clipboard listener overwrite after an explicit capture import.
             suppressClipboardImportUntilMs = System.currentTimeMillis() + 2_500L
@@ -262,12 +269,55 @@ class SocialGptFragment : Fragment() {
         )
     }
 
+    private fun armAutoVerify() {
+        cancelPendingAutoVerify(showHint = false)
+        val task = Runnable { runVerifyNow() }
+        pendingVerifyRunnable = task
+        mainHandler.postDelayed(task, VERIFY_AUTO_DISPATCH_DELAY_MS)
+        Toast.makeText(requireContext(), R.string.socialgpt_verify_pending, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun postponeAutoVerify(delayMs: Long) {
+        val task = pendingVerifyRunnable ?: return
+        mainHandler.removeCallbacks(task)
+        mainHandler.postDelayed(task, delayMs)
+    }
+
+    private fun cancelPendingAutoVerify(showHint: Boolean) {
+        val task = pendingVerifyRunnable ?: return
+        mainHandler.removeCallbacks(task)
+        pendingVerifyRunnable = null
+        if (showHint) {
+            Toast.makeText(requireContext(), R.string.socialgpt_verify_paused, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun runVerifyNow() {
+        cancelPendingAutoVerify(showHint = false)
+        viewModel.generateDraft(
+            token = tokenStore.getToken().orEmpty(),
+            baseUrl = tokenStore.getBaseUrl(),
+            contextText = binding.inputContext.text?.toString().orEmpty(),
+            promptText = buildVerifyPrompt(),
+            model = tokenStore.getVerifyModel().ifBlank { "gpt-5.4" },
+            language = tokenStore.getVerifyLanguage().ifBlank { "auto" },
+            mood = tokenStore.getReplyMood().ifBlank { "balanced" },
+            requestMode = SocialGptRequestMode.VERIFY
+        )
+    }
+
+    private fun buildVerifyPrompt(): String {
+        val details = binding.inputVerifyDetails.text?.toString().orEmpty().trim()
+        if (details.isBlank()) return ""
+        return "Prioritize this detail while verifying: $details"
+    }
+
     private fun renderRichText(raw: String): CharSequence {
         if (raw.isBlank()) return raw
-        var escaped = TextUtils.htmlEncode(raw)
+        var escaped = TextUtils.htmlEncode(normalizeRawRichText(raw))
 
         // Handle markdown links [text](url) -> clickable links
-        escaped = escaped.replace(Regex("""\[([^\]]+)\]\(([^)]+)\)""")) { match ->
+        escaped = escaped.replace(Regex("""\[([^\]]+)\]\((https?://[^)\s]+)\)""")) { match ->
             val text = match.groupValues[1]
             val url = match.groupValues[2]
             val label = text.ifBlank { toReadableLinkLabel(url) }
@@ -279,6 +329,10 @@ class SocialGptFragment : Fragment() {
             val url = match.value
             "<a href=\"$url\">${TextUtils.htmlEncode(toReadableLinkLabel(url))}</a>"
         }
+
+        escaped = escaped
+            .replace("&quot;&gt;", " ")
+            .replace("&lt;/a&gt;", "")
 
         // Handle markdown headers
         escaped = escaped.replace(Regex("""(?m)^###\s+(.+)$"""), "<b>$1</b>")
@@ -300,13 +354,25 @@ class SocialGptFragment : Fragment() {
         return HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_LEGACY)
     }
 
+    private fun normalizeRawRichText(raw: String): String {
+        var normalized = raw
+            .replace(Regex("""(https?://[^\s"]+)"\s*>"""), "$1 ")
+            .replace(Regex("""<a\s+[^>]*href\s*=\s*['\"]([^'\"]+)['\"][^>]*>(.*?)</a>""", RegexOption.IGNORE_CASE)) {
+                val href = it.groupValues[1].trim()
+                val label = it.groupValues[2].trim()
+                if (href.isBlank()) label else "[$label]($href)"
+            }
+        return normalized
+    }
+
     private fun toReadableLinkLabel(rawUrl: String): String {
         return runCatching {
             val uri = URI(rawUrl)
             val host = uri.host?.removePrefix("www.") ?: return@runCatching rawUrl
             val path = uri.path.orEmpty().trimEnd('/')
-            val shortPath = if (path.isBlank()) "" else path.take(28)
-            if (shortPath.isBlank()) host else "$host$shortPath"
+            val shortPath = if (path.isBlank()) "" else path.take(30)
+            val suffix = if (path.length > shortPath.length) "..." else ""
+            if (shortPath.isBlank()) host else "$host$shortPath$suffix"
         }.getOrDefault(rawUrl)
     }
 
@@ -428,6 +494,7 @@ class SocialGptFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        cancelPendingAutoVerify(showHint = false)
         super.onDestroyView()
         textToSpeech?.stop()
         textToSpeech?.shutdown()
@@ -438,6 +505,8 @@ class SocialGptFragment : Fragment() {
     companion object {
         const val ARG_SHARED_TEXT = "shared_text"
         const val ARG_AUTO_VERIFY = "auto_verify"
+        private const val VERIFY_AUTO_DISPATCH_DELAY_MS = 1600L
+        private const val VERIFY_FOCUS_PAUSE_MS = 3500L
     }
 }
 

@@ -26,6 +26,10 @@
     <string name="socialgpt_language_label">Response language</string>
     <string name="socialgpt_generate">Generate reply suggestions</string>
     <string name="socialgpt_verify_fact">Verify fact</string>
+    <string name="socialgpt_verify_details_label">Verify details (optional)</string>
+    <string name="socialgpt_verify_details_hint">Optional: what specifically should be verified?</string>
+    <string name="socialgpt_verify_pending">Verifying shortly... Add details now if needed.</string>
+    <string name="socialgpt_verify_paused">Auto verify paused. Tap Verify fact again when ready.</string>
     <string name="socialgpt_read_aloud">Read aloud response</string>
     <string name="socialgpt_enable_screenreader">Enable speech playback after generation</string>
     <string name="socialgpt_response_label">Response from Tools</string>
