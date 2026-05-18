@@ -12,6 +12,13 @@ Current Android repo status (2026-04-22): the app now includes functional Social
 
 ## Change sync (2026-05-14)
 
+- **vBulletin onboarding now also exposes a registration-complete invite endpoint for future hosted forum scripts** – Tools now has `POST /api/vbulletin/onboarding/invite/complete` for the post-registration handoff where a future vBulletin frontend script can say that one forum registration appears completed and ask Tools to finish the invite safely.
+  - Request guidance: `invite_code` is required; additive `forum_user_id`, `forum_username`, and `forum_email` are optional hints.
+  - Behavioral guidance: `forum_email` is only a lookup hint, not proof. Tools now resolves the forum account from the invite plus the available identity hints, reuses an existing onboarding request when one already exists, or creates a new request when the invite is still valid and no earlier request exists yet.
+  - Safety guidance: when the invite is tied to one specific forum user, the resolved account must match that user. When the onboarding flow uses an invite-code profile field, the resolved forum account must still contain that same invite code in the configured vBulletin profile field before the completion call succeeds.
+  - Activation guidance: the endpoint only auto-approves and grants forum access when the existing onboarding config already allows safe automatic approval without manual review; otherwise the request stays linked/pending review.
+  - Response guidance: success payloads can now include top-level `request`, `forum_user`, `created_request`, `linked_now`, `approved_now`, `already_completed`, `requires_manual_review`, `access_granted`, `dry_run_only`, `next_action`, and additive `validation.match_sources[]` / `validation.profile_field_match` metadata.
+
 - **SocialGPT verify/fact-check model choice is now Tools-controlled instead of extension-controlled** – `POST /api/ai/socialgpt/respond` keeps the same endpoint shape, but newer browser/native clients should no longer assume that the local app/extension chooses the verification model for `request_mode="verify"`.
   - Behavioral guidance: when the request is a verify/fact-check run, Tools can ignore a client-supplied model hint and choose the verification model server-side instead.
   - Behavioral guidance: when web search is part of the verification path and `gpt-4o` is available, Tools may now prefer `gpt-4o` as the primary verification model.
@@ -522,6 +529,7 @@ Current Android repo status (2026-04-22): the app now includes functional Social
 
 - **Mail Support Assistant config now includes additive mailbox-level generic no-match reply defaults** – `GET /api/mail-support-assistant/config` can now return mailbox `defaults.generic_no_match_ai_enabled`, `defaults.generic_no_match_ai_model`, `defaults.generic_no_match_if`, `defaults.generic_no_match_instruction`, and `defaults.generic_no_match_footer`.
   - Additive expansion: mailbox defaults can now also include `defaults.generic_no_match_ai_reasoning_effort`, and rule replies can now include additive `reply.ai_reasoning_effort`.
+  - Additive expansion: mailbox defaults can now also include `defaults.ignored_senders[]` (`id`, `email`, `label`, `notes`) so standalone/support clients can skip recurring sender emails before they become new follow-up cases again.
   - Intended use: standalone/support clients can optionally evaluate otherwise unmatched inbound mail against one admin-managed mailbox-level allow-condition before deciding whether a generic AI-generated reply is even allowed.
   - Response change is additive only; existing mailbox/rule schema remains valid.
 
@@ -1154,6 +1162,12 @@ Android SocialGPT guidance:
          "generic_no_match_if": "If the email is an unsolicited collaboration proposal, logo/design sales pitch, SEO offer, or similar unsolicited service sale, we should politely but firmly decline.",
          "generic_no_match_instruction": "Thank them briefly, decline politely but firmly, and keep the reply in the sender's original language.",
          "generic_no_match_footer": "Kind regards",
+         "ignored_senders": [{
+           "id": 77,
+           "email": "ignoreme@example.com",
+           "label": "Ignore Me <ignoreme@example.com>",
+           "notes": "Recurring sender ignored by operators"
+         }],
          "subject_trim_prefixes": ["[SPAMASSASSIN]", "[INFO]"]
        },
       "rules": [
@@ -1205,6 +1219,7 @@ Android SocialGPT guidance:
 - Matched-rule precedence note: when `reply.ai_enabled=true`, standalone/support clients should treat that rule's `responder_name`, `persona_profile`, `custom_instruction`, `ai_model`, and additive `ai_reasoning_effort` as the authoritative AI override set for that reply.
 - Mailbox `defaults.generic_no_match_*` fields remain mailbox-level defaults for the unmatched-mail fallback path only.
 - Unmatched-mail guidance: `defaults.generic_no_match_if` is the allow-condition, while `defaults.generic_no_match_instruction` is the reply-writing instruction only after the mail clearly matches that allow-condition.
+- Ignore guidance: `defaults.ignored_senders[]` is a mailbox-level recurring-sender skip list; standalone/support clients can use those normalized emails to bypass future automatic handling and avoid creating new centralized follow-up cases for the same sender.
 - Safety guidance: current standalone/support behavior is expected to leave the mail untouched unless AI returns a strict JSON allow decision with high certainty; uncertain or invalid no-match AI outputs should not be sent.
 - Additive `user.ai_daily_budget` is visibility metadata only; it reports the effective AI daily budget used by the same SocialGPT-backed reply path that Mail Support Assistant calls, so clients can warn operators before a long mailbox run exhausts the remaining budget.
 
@@ -2112,11 +2127,23 @@ Example response:
   "config": {
     "enabled": true,
     "default_model": "turbo",
-    "upload_max_mb": 200,
+    "upload_max_mb": 64,
+    "upload_limit": {
+      "configured_mb": 200,
+      "php_upload_max_mb": 64,
+      "php_post_max_mb": 128,
+      "effective_max_mb": 64,
+      "effective_max_label": "64 MB",
+      "limited_by_php": true
+    },
     "ytdlp_configured": true
   }
 }
 ```
+
+Additive upload-limit guidance:
+- `config.upload_max_mb` now reflects the practical/effective Whisper upload cap for the current host.
+- Additive `config.upload_limit` can explain when PHP upload/body limits are lower than Whisper's own configured limit.
 
 #### `GET /whisper/jobs?limit=100`
 Returns visible queue jobs for the current user.
@@ -2150,6 +2177,9 @@ Use `multipart/form-data` with:
 Important rule:
 
 - send **either** `source_url` **or** `media_file`, not both.
+
+Upload error guidance:
+- When one uploaded media file is too large for the host, only partially uploaded, or blocked by PHP temporary-upload failures, the endpoint can now return `422` with `errors.media_file[]` carrying a direct human-readable explanation instead of only the generic `The media file failed to upload.` validation wording.
 
 #### `GET /whisper/jobs/{jobId}`
 Returns one visible job item.
@@ -2238,6 +2268,9 @@ Request guidance:
 - Supports the same URL-vs-upload model as `POST /whisper/jobs`
 - Requires additive `callback_url`
 - Supports the same additive `source_label`, `source_note`, `model`, `language`, `analysis_language`, `translation_target_languages[]`, and `disable_diarization` fields as the normal queue endpoint
+
+Upload error guidance:
+- The token API now uses the same clearer `422 errors.media_file[]` validation path for oversize, partial, and PHP-level upload transport failures before the Whisper job is queued.
 
 Example JSON body:
 ```json
