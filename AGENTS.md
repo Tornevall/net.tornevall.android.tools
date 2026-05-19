@@ -10,6 +10,13 @@ Current Android repo status (2026-04-22): the app now includes functional Social
 - **Commit + push after completed code/docs changes**: when a task is finished and verified, agents should create a commit and push it to the active remote branch.
 - **No version tags unless explicitly requested**: agents must not create or push Git tags automatically. Tagging is only allowed when the user explicitly asks for it in that session.
 
+## Change sync (2026-05-19)
+
+- **vBulletin invite-complete frontend handoff is now explicitly public/token-free and invite-code input is URL-tolerant** – `POST /api/vbulletin/onboarding/invite/complete` remains the same endpoint, but newer clients/frontend hooks should now treat it as a public invite-driven handoff instead of a bearer-token API.
+  - Auth guidance: do not send a bearer token just to complete the invite. The endpoint is intended to trust the invite-code flow plus server-side forum-account validation.
+  - Request guidance: `invite_code` may now be either the raw invite token or a full onboarding URL that contains the token (for example `/vbulletin/onboarding/{slug}/{inviteKey}`); Tools now strips that URL down to the real invite token before lookup.
+  - Frontend guidance: forum hooks should still prefer sending the clean invite token when available, but can now survive users/profile fields that accidentally store the whole onboarding URL instead of only the code.
+
 ## Change sync (2026-05-14)
 
 - **vBulletin onboarding now also exposes a registration-complete invite endpoint for future hosted forum scripts** – Tools now has `POST /api/vbulletin/onboarding/invite/complete` for the post-registration handoff where a future vBulletin frontend script can say that one forum registration appears completed and ask Tools to finish the invite safely.
