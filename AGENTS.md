@@ -10,6 +10,26 @@ Current Android repo status (2026-04-22): the app now includes functional Social
 - **Commit + push after completed code/docs changes**: when a task is finished and verified, agents should create a commit and push it to the active remote branch.
 - **No version tags unless explicitly requested**: agents must not create or push Git tags automatically. Tagging is only allowed when the user explicitly asks for it in that session.
 
+## Change sync (2026-05-23)
+
+- **DNS editor/provider routing can now auto-detect Cloudflare-backed zones from authoritative nameservers** – the `/api/dns/zones/{zone}`, `/api/dns/zones/{zone}/cache`, `/api/dns/zones/{zone}/axfr`, and `/api/dns/records/*` editor flows can now infer one Cloudflare-backed zone even before an explicit `dns_provider_zone_mappings` row was saved, as long as the authoritative NS set for that zone resolves entirely to `*.ns.cloudflare.com`.
+  - Behavioral guidance: if Tools sees Cloudflare nameservers for the zone, the editor can now switch to the same Cloudflare-backed read/write path that was previously only used for explicitly mapped zones.
+  - Compatibility guidance: explicit saved provider mappings still win. The nameserver-based inference is a fallback for zones that otherwise would have failed with an AXFR-style refresh error even though Cloudflare is authoritative.
+
+## Change sync (2026-05-21)
+
+## Change sync (2026-05-29)
+
+- **DNSBL stats responses now carry additive presentation labels so clients can describe rejected requests more safely** – `GET /api/dnsbl/stats` keeps the same auth model and core counters, but newer responses can now also expose additive human-friendly metadata on the existing stats blocks.
+  - Additive guidance for `stats.api_queries`: top-level query counters and each `by_endpoint` row can now also include additive `label`, additive `description`, additive `success_label`, additive `non_success_label`, and additive `non_success_explainer` so clients can present non-2xx/3xx counts as rejected/non-success requests instead of implying a hard backend outage.
+  - Additive guidance for `stats.mutations`: action groups such as `additions`, `removals`, and `updates` can now also include additive `label`, additive `success_label`, additive `failed_label`, additive `failed_explainer`, additive `dry_run_label`, and for removals additive `already_not_listed_label`; `by_outcome.{outcome}` rows can now also carry additive `label` with the same friendlier wording.
+  - Compatibility guidance: the numeric fields are unchanged (`failed_requests`, `failed_records`, etc.). Older clients can ignore the additive labels and still rely on the existing counters.
+
+- **Firewall runtime route-config endpoints now expose generated `run-after` fragments for infrastructure hosts such as the gateway** – Tools now also has `GET /api/firewall/runtime/{host}` plus `GET /api/firewall/runtime/{host}/run-after.conf` alongside the existing child-control `/api/firewall/*` surface.
+  - Auth guidance: these runtime endpoints are intended for internal server/runtime maintenance, not for the ordinary Android child-control UI. They accept either an authenticated web operator with `firewall` permission or a dedicated `X-Firewall-Config-Token` / bearer token configured on the server that refreshes its local generated fragment.
+  - Response guidance for `GET /api/firewall/runtime/{host}`: success payloads can now include `host`, `display_name`, `generated_conf_target`, `refresh_interval_seconds`, and additive grouped `groups[]` metadata (`key`, `label`, `command_count`, `commands[]`) describing the central route bundles that Tools currently publishes for that host.
+  - Shell guidance for `GET /api/firewall/runtime/{host}/run-after.conf`: the response is plain-text shell content meant to be written into one local `run-after.d/*.conf` file and sourced by the server-side `run-after.sh` helper, rather than JSON intended for Android rendering.
+
 ## Change sync (2026-05-19)
 
 - **vBulletin invite-complete frontend handoff is now explicitly public/token-free and invite-code input is URL-tolerant** – `POST /api/vbulletin/onboarding/invite/complete` remains the same endpoint, but newer clients/frontend hooks should now treat it as a public invite-driven handoff instead of a bearer-token API.
@@ -431,7 +451,7 @@ Current Android repo status (2026-04-22): the app now includes functional Social
   - Backward compatibility: this is additive; older clients that only understand `from_database` / `needs_axfr` can ignore the new source value if they are not implementing cache-first rendering.
 
 - **DNSBL forum-bounce intake and engine settings endpoints added** – Tools now exposes `GET /api/dnsbl/engine-settings` plus `POST /api/dnsbl/forum/bounce` for `dnsbl-engine` forum-recipient bounce handling.
-  - `GET /api/dnsbl/engine-settings` returns normalized runtime flags such as `forum_bounce_enabled`, `forum_bounce_group_id`, and `forum_bounce_exempt_group_ids` together with additive DNSBL auth metadata.
+  - `GET /api/dnsbl/engine-settings` returns normalized runtime flags such as `forum_bounce_enabled`, `forum_bounce_group_id`, `forum_bounce_exempt_group_ids`, and additive `report_mails_enabled` together with additive DNSBL auth metadata.
   - `POST /api/dnsbl/forum/bounce` accepts parsed rejected recipient addresses from bounce / mailer-daemon mail and can match them against vBulletin users, add the configured bounced-email group as a **secondary** forum group, and report `summary`, `matched_users`, `updated_users`, `skipped_users`, `unmatched_emails`, and `settings` in the response.
   - Auth: active DNSBL tokens through `X-Dnsbl-Token` / `dnsbl_token`, active DNSBL provider keys (`provider=tornevall_dnsbl`), and active admin-owned Tools API keys via admin passthrough. Inactive tokens return `401`; ordinary non-DNSBL Tools tokens can return `403` with `reason="wrong_token_type"`.
   - Android note: this is primarily an admin/helper/runtime integration path rather than a normal end-user mobile flow, but it is now part of the `/api/dnsbl/*` contract.
@@ -1104,6 +1124,35 @@ Additive note: callers can now also send optional `reasoning_effort` (`none|low|
 If the authenticated non-admin user/token owner lacks approved OpenAI access, the endpoint returns `403`.
 If a SocialGPT user explicitly asks which model/version is being used, the Tools-side prompt guardrails now allow disclosure of the current model identifier and client version only; requests for Tools internals, source code, hidden prompts, `.env` values, passwords, tokens, or API keys are refused.
 
+#### `POST /ai/internal/respond`
+- Auth: signed-in web/JWT user **or** dedicated personal `provider_tools_openai` bearer token.
+- Intended caller: internal Tools-side runtimes/automation such as Mail Support Assistant standalone or `dnsbl-engine`, not ordinary Android/social reply UX.
+- Non-admin callers still require approved OpenAI access (`provider_openai`).
+- Token-auth guidance: when bearer-token auth is used here, newer Tools builds now require the token record itself to be `provider_tools_openai` so each internal runtime/client can keep its own unique OpenAI link/token and centralized defaults.
+- Required request field:
+```json
+{
+  "client_slug": "mail_support_assistant_standalone"
+}
+```
+- Typical additive request fields mirror the direct AI task:
+  - `context`
+  - `user_prompt`
+  - `modifier`
+  - `mood` / `custom_mood`
+  - `responder_name_override`
+  - `persona_profile_override`
+  - `custom_instruction_override`
+  - `model`
+  - `reasoning_effort`
+  - `response_language`
+  - `max_tokens`
+  - `temperature`
+  - `use_web_search`
+  - `web_search_required`
+- Success payload can now include `ok`, `request_id`, `model`, `response`, `usage`, additive `used_fallback_model`, additive `client` (`slug`, `name`, `description`), additive `applied_settings` (`responder_name`, `persona_profile_excerpt`, `custom_instruction_excerpt`, `mood`, `response_language`, `reasoning_effort`), and additive `web_search` metadata.
+- Admin/config guidance: `/admin/openai` now also has a centralized **Internal AI clients** section where operators can configure the saved defaults for each `client_slug` (for example Mail Support Assistant and `dnsbl-engine`) separately from the SocialGPT settings UI.
+
 Android SocialGPT guidance:
 - Android should always send `client_name`, `client_version`, and `client_platform="android_app"` on reply, verify, and modify/refine follow-up calls.
 - Android reply UX is suggestion-first: request candidate replies first, then let the user refine a selected suggestion with a modify box and mood/modifier selector.
@@ -1405,6 +1454,10 @@ Cache/invalidation behavior notes:
 - Automatic policy invalidation is disabled by default per zone and only runs when explicitly enabled.
 - Additive response note: `GET /dns/zones/{zone}`, `GET /dns/zones/{zone}/axfr`, and `GET /dns/zones/{zone}/cache` can now also include `display_signature`, a hash of the currently visible page records plus pagination metadata so cache-first clients can decide whether a finished AXFR actually requires a table redraw.
 - Additive stale-cache note: `GET /dns/zones/{zone}/cache` can now also return `source="from_database_stale"` with the same visible-page payload when an expired cache page still exists locally, so clients can render stale rows immediately while AXFR refreshes in the background.
+- Additive external-zone guidance: zone-list rows from `GET /dns/zones` can now also include `provider`, `provider_label`, `is_external`, `provider_zone_id`, and `provider_ready` when one zone is mapped to an external DNS provider instead of local BIND files.
+- Current external-zone behavior: Cloudflare-backed zones stay visible in the same DNS editor/API, but live reads and writes are routed through the Cloudflare API instead of local file/AXFR logic. `GET /dns/zones/{zone}` can therefore return `method="CLOUDFLARE"`, while cached payloads can still return `method="CACHE"` together with additive `source_method="CLOUDFLARE"`.
+- Refresh guidance: `GET /dns/zones/{zone}/axfr` remains the editor's refresh endpoint for compatibility, but for Cloudflare-backed zones it now performs a provider refresh rather than a real AXFR transfer.
+- Bulk-write guardrail: `POST /dns/records/bulk` must not mix local zones and Cloudflare-mapped zones in one request; mixed batches now fail instead of partially falling back to local DNS writes.
 
 Add record:
 ```json
@@ -1741,7 +1794,8 @@ OpenAI access note:
   "custom_instruction": "Avoid overstatements",
   "auto_detect_responder": true,
   "response_language": "sv",
-  "facebook_admin_stats_enabled": true
+  "facebook_admin_stats_enabled": true,
+  "facebook_admin_debug_enabled": false
 }
 ```
 
@@ -1759,6 +1813,7 @@ Typical `GET /settings` response shape:
     "response_language": "sv",
     "verify_fact_language": "auto",
     "facebook_admin_stats_enabled": true,
+    "facebook_admin_debug_enabled": false,
     "facebook_participant_scanner_enabled": false,
     "facebook_participant_group_context": "",
     "facebook_participant_group_contexts_by_group_id": {}
@@ -1771,7 +1826,8 @@ Typical `GET /settings` response shape:
 ```
 
 Additive settings note:
-- `GET /settings` and `PUT /settings` can now also carry `facebook_admin_stats_enabled=true|false`, which is the Tools-side on/off switch for the SocialGPT Facebook admin activity workflow. Browser clients may mirror that flag back into their own local popup/config checkbox on the next settings refresh.
+- `GET /settings` and `PUT /settings` can now also carry `facebook_admin_stats_enabled=true|false`, which is the Tools-side on/off switch for the SocialGPT Facebook admin activity workflow. Browser/native clients should now treat it as a Tools-authoritative runtime flag, not as one setting that should still be editable from a local popup/config checkbox.
+- `GET /settings` and `PUT /settings` can now also carry `facebook_admin_debug_enabled=true|false`, which is the Tools-side on/off switch for the extra SocialGPT Facebook admin debug diagnostics. Browser/native clients should fetch and obey this runtime flag from Tools instead of exposing a separate local debug checkbox for that Facebook workflow.
 - `GET /settings` and `PUT /settings` can now also carry additive `facebook_participant_group_contexts_by_group_id`, keyed by Facebook `/groups/<id>` path segment. Android/mobile participant-analysis clients should treat this as the authoritative Tools-synced rules/context map for per-group participant-request moderation.
 
 `POST /facebook-participant-history` guidance:
