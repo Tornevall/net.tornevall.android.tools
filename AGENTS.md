@@ -10,6 +10,12 @@ Current Android repo status (2026-04-22): the app now includes functional Social
 - **Commit + push after completed code/docs changes**: when a task is finished and verified, agents should create a commit and push it to the active remote branch.
 - **No version tags unless explicitly requested**: agents must not create or push Git tags automatically. Tagging is only allowed when the user explicitly asks for it in that session.
 
+## Change sync (2026-06-01)
+
+- **Tools bearer-token auth is now scope-driven instead of provider-name-driven for `api_keys`-backed endpoints** – newer Tools builds still keep provider labels such as `provider_socialgpt`, `provider_tools_openai`, `provider_whisper_api`, and `provider_mail_support_assistant_mailer` for operator/UI organization, but runtime auth now checks the token's effective `access_scopes[]` first.
+  - Scope guidance: `ai.client` covers SocialGPT / extension / Mail Support Assistant config-style bearer flows, `ai.internal` covers `POST /api/ai/internal/respond`, `whisper.api` covers the token-authenticated Whisper transcription API, `mail-support-assistant.relay` covers `POST /api/mail-support-assistant/send-reply`, and the older `is_ai=1` flag is still treated as a legacy compatibility path for `ai.client`.
+  - Compatibility guidance: older dedicated provider rows still work because Tools backfills the same effective scopes from the legacy provider/is_ai data, but newer clients should no longer assume that a specific provider name is itself the auth contract.
+
 ## Change sync (2026-05-23)
 
 - **DNS editor/provider routing can now auto-detect Cloudflare-backed zones from authoritative nameservers** – the `/api/dns/zones/{zone}`, `/api/dns/zones/{zone}/cache`, `/api/dns/zones/{zone}/axfr`, and `/api/dns/records/*` editor flows can now infer one Cloudflare-backed zone even before an explicit `dns_provider_zone_mappings` row was saved, as long as the authoritative NS set for that zone resolves entirely to `*.ns.cloudflare.com`.
@@ -686,7 +692,7 @@ Current Android repo status (2026-04-22): the app now includes functional Social
 ## Change sync (2026-04-05)
 
 - **SocialGPT / extension token validation endpoint added** – `GET /api/social-media-tools/extension/validate-token` is now available for lightweight bearer-token verification without running the heavier `Tools → OpenAI` smoke test. Auth is the same personal AI-token model used by the other extension endpoints (`Authorization: Bearer`, `X-Api-Key`, `apikey`).
-  - Success response includes: `ok`, `valid`, `message`, `user` (`id`, `name`, `email`), and `token` (`provider`, `user_id`, `is_personal`, additive `is_ai`).
+  - Success response includes: `ok`, `valid`, `message`, `user` (`id`, `name`, `email`), and `token` (`provider`, `user_id`, `is_personal`, additive `is_ai`, additive `access_scopes[]`).
   - Invalid/missing token returns `401` with `ok=false`, `valid=false`, `message="Bearer token rejected."`.
   - Intended for extension/native clients that want immediate token confirmation before loading settings or testing OpenAI.
 
@@ -757,10 +763,10 @@ This API uses multiple auth models in parallel:
    - Flow: `POST /account/login` returns `access_token`.
    - Use `Authorization: Bearer <jwt>` on protected JWT endpoints.
 
-2. **Personal AI token (`tools_ai_bearer` or other AI-capable personal API key)**
-   - Used by AI/social media extension endpoints.
-   - Legacy provider: `tools_ai_bearer`.
-   - Additive support: other personal non-global API keys are also accepted when the key is active and flagged AI-capable in Tools (`api_keys.is_ai=1`).
+2. **Personal scoped bearer token (`api_keys` row with endpoint access scopes)**
+   - Used by AI/social media extension endpoints and other personal bearer-token API flows.
+   - Preferred model: one personal non-global token with the right `access_scopes[]` for the endpoint you want to call (for example `ai.client`, `ai.internal`, `whisper.api`, `mail-support-assistant.relay`).
+   - Legacy compatibility: older `tools_ai_bearer` / `provider_socialgpt` rows and personal `is_ai=1` tokens still work where Tools maps them onto the same effective `ai.client` scope.
    - Token transport:
      - `Authorization: Bearer <token>`
      - `X-Api-Key: <token>`
@@ -1086,7 +1092,7 @@ Android note:
 - Error codes: `401`, `403`, `422`, `503`.
 
 #### `POST /ai/socialgpt/respond`
-- Auth: JWT/web user or personal AI-capable token (`tools_ai_bearer` or another active personal API key flagged with `is_ai=1`), plus approved OpenAI access for non-admin users (`provider_openai`). Admin bypass still applies.
+- Auth: JWT/web user or personal bearer token with the effective scope `ai.client` (legacy `tools_ai_bearer` / `provider_socialgpt` rows and other personal `is_ai=1` keys still work because Tools maps them onto that same scope), plus approved OpenAI access for non-admin users (`provider_openai`). Admin bypass still applies.
 - Throttling: now uses a resolved-caller/user-aware high ceiling instead of the older small fixed AI route cap; admin-owned requests are effectively unthrottled at the route layer.
 - Typical body:
 ```json
@@ -1125,10 +1131,10 @@ If the authenticated non-admin user/token owner lacks approved OpenAI access, th
 If a SocialGPT user explicitly asks which model/version is being used, the Tools-side prompt guardrails now allow disclosure of the current model identifier and client version only; requests for Tools internals, source code, hidden prompts, `.env` values, passwords, tokens, or API keys are refused.
 
 #### `POST /ai/internal/respond`
-- Auth: signed-in web/JWT user **or** dedicated personal `provider_tools_openai` bearer token.
+- Auth: signed-in web/JWT user **or** personal bearer token with the scope `ai.internal`.
 - Intended caller: internal Tools-side runtimes/automation such as Mail Support Assistant standalone or `dnsbl-engine`, not ordinary Android/social reply UX.
 - Non-admin callers still require approved OpenAI access (`provider_openai`).
-- Token-auth guidance: when bearer-token auth is used here, newer Tools builds now require the token record itself to be `provider_tools_openai` so each internal runtime/client can keep its own unique OpenAI link/token and centralized defaults.
+- Token-auth guidance: when bearer-token auth is used here, newer Tools builds now check the token scope `ai.internal` instead of requiring one exact provider name; the built-in generator still creates `provider_tools_openai` rows as a convenience label.
 - Required request field:
 ```json
 {
@@ -1162,7 +1168,7 @@ Android SocialGPT guidance:
 ### 4.4.1 Mail Support Assistant (`/mail-support-assistant`)
 
 #### `GET /mail-support-assistant/config`
-- Auth: personal AI-capable token (`tools_ai_bearer` or another active personal token marked `is_ai=1`)
+- Auth: personal bearer token with the effective scope `ai.client` (legacy `tools_ai_bearer` and personal `is_ai=1` rows still work through that compatibility mapping)
 - Intended caller: the standalone Mail Support Assistant client / cron worker
 - Throttling: now uses a user-aware high ceiling rather than the old fixed `120/min` group cap; admin-owned requests are effectively unthrottled at the route layer.
 - Success response includes:
@@ -1380,7 +1386,7 @@ Android SocialGPT guidance:
 - Additive sync note: callers can now also send `headers_raw`, `headers_map`, and `body_text_raw` so Tools can preserve remote-readable message headers plus raw/plain/HTML body variants for later operator inspection.
 
 #### `POST /mail-support-assistant/send-reply`
-- Auth: dedicated personal relay token (`provider_mail_support_assistant_mailer`), not the generic AI receiver token.
+- Auth: personal relay token with the scope `mail-support-assistant.relay`, not the generic AI receiver token.
 - Permission: token owner must have `mail-support-assistant.relay` unless admin.
 - Throttling: same higher user-aware Mail Support Assistant limiter as `GET /api/mail-support-assistant/config`; admin-owned requests are effectively unthrottled at the route layer.
 - Typical body:
@@ -1780,7 +1786,7 @@ Extension (`/social-media-tools/extension`):
 - `GET /test`
 - `POST /test`
 
-Auth: personal AI-capable token (`Authorization: Bearer`, `X-Api-Key`, `apikey`). Legacy `tools_ai_bearer` tokens still work, but other active personal tokens marked `is_ai=1` are now also accepted.
+Auth: personal bearer token with the effective scope `ai.client` (`Authorization: Bearer`, `X-Api-Key`, `apikey`). Legacy `tools_ai_bearer` rows and other active personal tokens marked `is_ai=1` still work through the same compatibility mapping.
 
 OpenAI access note:
 - `validate-token` is auth-only and can succeed even before the user is approved for OpenAI execution.
@@ -2157,7 +2163,7 @@ Auth model:
 - Requires permission `whisper.use` (admin users bypass)
 
 Dedicated token-auth transcription note:
-- Tools now also has a separate `/api/whisper/transcribe/*` surface for server-to-server callers that use a dedicated personal token (`provider_whisper_api`) instead of web/JWT auth.
+- Tools now also has a separate `/api/whisper/transcribe/*` surface for server-to-server callers that use a personal token with the scope `whisper.api` instead of web/JWT auth (the built-in generator still creates `provider_whisper_api` rows as a convenience label).
 - That token API additionally requires user permission `whisper.api` (plus the ordinary `whisper.use` access; admin bypass still applies).
 
 Rate limit:
@@ -2310,7 +2316,7 @@ Request body (optional):
 #### Token-authenticated transcribe API (`/whisper/transcribe`)
 
 Auth model:
-- Dedicated active personal token with provider `provider_whisper_api`
+- Dedicated active personal token with the scope `whisper.api`
 - Preferred transport: `Authorization: Bearer YOUR_API_TOKEN`
 - Legacy `X-Api-Key` / `apikey` transport may still work for backwards compatibility, but new integrations should prefer the Authorization header
 - Token owner must also have permission `whisper.api` plus `whisper.use` (admin bypass still applies)
